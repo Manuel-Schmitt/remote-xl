@@ -28,6 +28,13 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
             self.logger = logging.getLogger('remoteXL')
             self.logger.setLevel(LOGLEVEL)
             self.logger.addHandler(fh)      
+            
+            #TODO: Improve
+            self.paramiko_logger = logging.getLogger('paramiko')
+            self.paramiko_logger.setLevel(LOGLEVEL)
+            self.paramiko_logger.addHandler(fh)    
+            
+            
             self.logger.debug('remoteXL-Service V{}: Initialized'.format(VERSION) )
             self.logger.debug('CWD: '+str(os.getcwd()))
             self.logger.debug('USER: '+str(getpass.getuser()))

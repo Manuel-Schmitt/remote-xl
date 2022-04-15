@@ -5,6 +5,7 @@ import signal
 import logging
 from pathlib import Path
 
+
 import ctypes
 import win32serviceutil
 import win32service, pywintypes
@@ -325,6 +326,6 @@ if __name__ == '__main__':
     check_service()
     
     app = RemoteXL_Application(qapp)
-    sys.exit(app.exec_())
+    app.exec_()
     
 

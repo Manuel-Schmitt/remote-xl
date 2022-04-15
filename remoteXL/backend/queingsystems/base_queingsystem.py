@@ -1,6 +1,9 @@
-from abc import ABC, abstractstaticmethod
+from abc import ABC, abstractstaticmethod,abstractclassmethod
+import time
+from pathlib import PurePosixPath
 
-class Base_Quingsystem(ABC):
+class BaseQuingsystem(ABC):
+    
     
     @classmethod
     def name(self):
@@ -19,7 +22,7 @@ class Base_Quingsystem(ABC):
     @abstractstaticmethod
     def needed_settings():
         raise NotImplementedError
-    
+        #all allowed settings are listed below
         settings = []
         settings.append({
             'Name' : 'queue',
@@ -41,6 +44,7 @@ class Base_Quingsystem(ABC):
             'Label':'Walltime',
             'Type' : 'WalltimeWidget',
             'MaxDays' : '14',
+            #Value of WalltimeWidgets is saved as string: 'days-hours:minutes'
         })      
          
         settings.append({
@@ -52,6 +56,70 @@ class Base_Quingsystem(ABC):
         })
         
         return settings
+    
+    @abstractclassmethod
+    def allows_resubmission(cls,job):
+        #return True if the quingsystem/jobscript reserves the resources for some time and allow the resubmission of the same ins/hkl files (with or without modification)
+        #The local refinement job creates an empty 'RESTART' file as signal for the running job.
+        return False
+    @classmethod
+    def wait_time(cls,job):
+        #only used if allow_resubmission() returns True
+        #return the wait time in seconds
+        return 0
+    
+    @classmethod
+    def output_filename(cls):
+        #Name of the shelxl output file
+        #The create_job_script method has to use this value.
+        return 'shelxl.out'
+    
+    @classmethod
+    def job_script_path(cls,job):
+        #local path to the generated job script
+        return job.ins_hkl_path.with_suffix('.job')
+    
+    @abstractclassmethod
+    def submit_job(cls,job):
+        raise NotImplementedError
+    
+    @abstractclassmethod
+    def create_job_script(cls,job):
+        raise NotImplementedError
+    
+    @abstractclassmethod
+    def get_compute_node(cls,job):
+        #return name of compute node as string
+        raise NotImplementedError
+        return None
+    
+    @abstractstaticmethod
+    def job_status(job):
+        #return 'queued', 'running' or 'stopped'
+        raise NotImplementedError
+        
+    @classmethod
+    def create_workdir(cls,job) -> PurePosixPath:  
+        #create workdir on remote host
+        base_workdir = PurePosixPath('./remoteXL_jobs/')  
+        basename = job.ins_hkl_path.name
+        timestring = time.strftime('%d-%m-%y_%H-%M-%S')
+        workdir = base_workdir / (basename + '_' + timestring)
+        
+        #Check if dir already exists
+        exists = job.remote_host.run("test -d '{}'".format(workdir),hide=True,warn=True).ok
+        for i in range(0,2):
+            if not exists:
+                break
+            #Not pretty, but should never be necessary.
+            workdir = PurePosixPath(str(workdir) + '_new')
+            exists = job.remote_host.run("test -d '{}'".format(workdir),hide=True,warn=True).ok
+
+        if exists:
+            raise ValueError('Could not create new workdir.')    
+        
+        job.remote_host.run("mkdir -p '{}' ".format(workdir),hide=True)
+        return workdir
     
     @classmethod
     def check_settings(cls,settings:dict):       
@@ -80,6 +148,6 @@ class Base_Quingsystem(ABC):
     @staticmethod
     def get_all_settings():   
         all = []
-        for subclass in Base_Quingsystem.all_subclasses():
+        for subclass in BaseQuingsystem.all_subclasses():
             all.append( {'Name':subclass.name(),'Displayname': subclass.displayname(), 'Settings':subclass.needed_settings()} )
         return all    

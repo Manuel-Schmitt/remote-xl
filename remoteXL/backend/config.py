@@ -8,11 +8,16 @@ from remoteXL import main
 
 class Config():    
     
-    def __init__(self,path:str):
+    def __init__(self,backend,path:str):
         self._logger = logging.getLogger(__name__)
+        self._backend = backend
         self._config_path = path   
         self._last_modified = 0
         self._config_data = {}
+        self.known_settings = []
+        self.running_jobs = []
+        self.global_default = None
+        self.file_defaults = {}
         self._load_config()
      
     def get(self,name:str):
@@ -31,7 +36,7 @@ class Config():
         if name in self._config_data:
             return self._config_data[name]
         else:
-            return None
+            raise AttributeError('{} is no key in config data!'.format(name) )
    
         
     def _load_config(self):       
@@ -39,19 +44,17 @@ class Config():
         try:    
             with open(self._config_path, "r") as jsonfile:
                 loaded_data =json.load(jsonfile)
-            self._config_data = loaded_data
+            self._config_data.update(loaded_data)
             self._last_modified = os.path.getmtime(self._config_path)
         except FileNotFoundError:
             self._logger.warning('Config file {} not found! Generating empty config file'.format(self._config_path))
-            self.save_config()
+            self._save_config()
         except json.decoder.JSONDecodeError:
             self._logger.warning('Config file {} corrupted! Generating empty config file'.format(self._config_path))
             corrupted_config = "corrupted_" + str(os.path.basename(self._config_path))
             shutil.move(self._config_path,os.path.join(os.path.dirname(self._config_path),corrupted_config))
-            self.save_config()
-            
-        if self.known_connections is None:
-            self.known_connections = []
+            self._save_config()
+        
         
             
     def _save_config(self):        
@@ -65,6 +68,11 @@ class Config():
             dir = os.path.dirname(self._config_path)
             if not os.path.exists(dir):
                 os.makedirs(dir)
+            
+            self.running_jobs = []
+            for job in self._backend.running_jobs:
+                self.running_jobs.append(job.to_json)
+            
             with open(self._config_path, "w") as jsonfile:
                 json.dump(self._config_data, jsonfile,indent=4)
         except PermissionError as e:
