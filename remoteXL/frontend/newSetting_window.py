@@ -1,14 +1,12 @@
-import sys
-import socket
-import json
+
 import logging
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,QMessageBox, QWidget, QLabel, QLineEdit, QComboBox, QSpinBox,QHBoxLayout,QFormLayout,QSizePolicy, QFileDialog
+from PyQt5.QtWidgets import QMainWindow,QMessageBox, QWidget, QLabel, QLineEdit, QComboBox, QSpinBox,QHBoxLayout,QFormLayout,QSizePolicy, QFileDialog
 from PyQt5.QtGui import  QFont
 from PyQt5.QtCore import QSize,Qt,QEventLoop
 
 
 from remoteXL.gui.Ui_NewSetting_Window import Ui_NewSetting_Window
-from remoteXL import main
+
 
 
 class NewSetting_Window(QMainWindow):
@@ -16,8 +14,8 @@ class NewSetting_Window(QMainWindow):
     def __init__(self,remoteXLApp,parent=None,wait_loop=None):
         super().__init__(parent)    
         self.remoteXLApp = remoteXLApp
-        if parent is not None:
-            self.setWindowModality(Qt.WindowModality.WindowModal)
+        if parent is not None:     
+            self.setWindowModality(Qt.WindowModality.WindowModal)  #pylint: disable=no-member
         self.wait_loop = wait_loop
         self.logger = logging.getLogger(__name__)
         self.ui = Ui_NewSetting_Window()
@@ -45,7 +43,7 @@ class NewSetting_Window(QMainWindow):
         self.ui.username_comboBox.addItem('')
         self.ui.shelxlpath_comboBox.addItem('')
         known_settings = self.remoteXLApp.call_backend(['known_settings'])
-        for idx,con in enumerate(known_settings):    
+        for idx,con in enumerate(known_settings):
             if con['remote']:         
                 self.ui.host_comboBox.addItem(con['host'])
                 self.ui.username_comboBox.addItem(con['user'])
@@ -63,18 +61,12 @@ class NewSetting_Window(QMainWindow):
         else:
             self.close()
         
-        
-    def get_data_on_close(self):
-        if self.wait_loop is None:           
-            self.wait_loop = QEventLoop()
-        self.wait_loop.exec_()
-        return _get_data()
     
     def wait_for_close(self):
         if self.wait_loop is None:           
             self.wait_loop = QEventLoop()
         self.wait_loop.exec_()
-        return 
+         
     
     def _get_data(self):
         setting_data = {'remote':self.remote_settings}
@@ -97,6 +89,12 @@ class NewSetting_Window(QMainWindow):
         else:
             setting_data.update({'path':str(self.ui.local_shelxlpath_lineEdit.text().strip())})    
         return setting_data
+    
+    def get_data_on_close(self):
+        if self.wait_loop is None:           
+            self.wait_loop = QEventLoop()
+        self.wait_loop.exec_()
+        return self._get_data()   
     
     def closeEvent(self,event):
         if self.wait_loop is not None:

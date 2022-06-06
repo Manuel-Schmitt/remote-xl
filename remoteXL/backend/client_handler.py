@@ -1,6 +1,5 @@
 import threading
-import traceback
-import os
+from pathlib import Path
 import logging
 import uuid
 from  multiprocessing.connection import Connection
@@ -9,6 +8,10 @@ from paramiko.ssh_exception import AuthenticationException
 
 from remoteXL.backend.refinement_job import RefinementJob
 from remoteXL.backend.queingsystems.base_queingsystem import BaseQuingsystem
+
+#TODO: Explicit import needed for pyinstaller...
+from remoteXL.backend.queingsystems.slurm import Slurm
+from remoteXL.backend.queingsystems.sge import Sun_Grid_Engine
 
 class ClientHandler(threading.Thread):
     def __init__(self,backend, client:Connection):
@@ -19,9 +22,8 @@ class ClientHandler(threading.Thread):
         self.ins_hkl_path = None
         self.shelxl_args = ''
         
-    def run(self):  
-         
-            
+    def run(self):
+        
         try:
             while not self.backend.stop_event.is_set():
             
@@ -34,11 +36,11 @@ class ClientHandler(threading.Thread):
                 
                 
                 if client_signal[0] == 'init_refinement':    
-                    self.ins_hkl_path = client_signal[1]
+                    self.ins_hkl_path = Path(client_signal[1])
                     if len(client_signal) > 2: 
                         self.shelxl_args = client_signal[2]
                     #Check again if files exist:
-                    if not os.path.exists('{}.ins'.format(self.ins_hkl_path)) or not os.path.exists('{}.hkl'.format(self.ins_hkl_path)):                       
+                    if not self.ins_hkl_path.with_suffix('.ins').is_file() or not self.ins_hkl_path.with_suffix('.hkl').is_file():                       
                         err_msg = "Background service could not find one of the following files.\n{}.ins\n{}.hkl".format(self.ins_hkl_path,self.ins_hkl_path)
                         self.logger.warning(err_msg)
                         self.client.send(['error',err_msg])
@@ -54,26 +56,30 @@ class ClientHandler(threading.Thread):
                                 self.logger.warning(err_msg)
                                 self.client.send(['error',err_msg])
                                 break
-                            elif job.remote_job_status == 'waiting':
+                            if job.remote_job_status == 'waiting':
                                 #job should be waiting for new refinement cycle     
                                 try:   
                                     #This may throw ValueError if not connected to remote host
-                                    if job.is_waiting():                      
+                                    if job.is_waiting():       
+                                        #TODO: Check what happens if ValueError is triggered.               
                                         self.client.send(['run',job.setting])
                                         continue
                                 except ValueError:
                                     pass
                                 
-                            else:
-                                #TODO: Check if ins/res file was changed since start of refinement;
-                                self.client.send(['running',job.setting,job.start_time_string])
+                            elif job.remote_job_status == 'running':
+                                #Check if ins/res file was changed since start of refinement;
+                                ins_changed = (job.ins_hash != RefinementJob.get_ins_hash(self.ins_hkl_path.with_suffix('.ins')))    
+                                    
+                                self.client.send(['running',job.setting,job.start_time_string,ins_changed])
                                 continue
+
                     
                         #Check if defaults are set for this file
                         setting_id = None
                         default_setting = None
-                        if self.ins_hkl_path in  self.backend.config.file_defaults:
-                            setting_id = self.backend.config.file_defaults[self.ins_hkl_path]
+                        if str(self.ins_hkl_path) in  self.backend.config.file_defaults:
+                            setting_id = self.backend.config.file_defaults[str(self.ins_hkl_path)]
                         elif  self.backend.config.global_default is not None:
                             setting_id = self.backend.config.global_default
                         if setting_id is not None:    
@@ -162,7 +168,7 @@ class ClientHandler(threading.Thread):
                     if len(client_signal) > 2:
                         file_path = client_signal[2]
                     elif self.ins_hkl_path is not None:
-                        file_path = self.ins_hkl_path
+                        file_path = str(self.ins_hkl_path)
                     else:
                         raise AttributeError('File path was not given')
                     
@@ -197,6 +203,7 @@ class ClientHandler(threading.Thread):
         finally:
             if not self.client.closed:
                 self.client.close()   
+            self.backend.config._config_data_changed = True
 
 
     def add_setting(self,data:dict):
@@ -208,8 +215,9 @@ class ClientHandler(threading.Thread):
                     self.client.send(['error',error])
                     return 
             else:
-                if not os.path.exists(data['path']):
-                    self.client.send(['error','File not found!'])
+                #Check if shelXL Path exists
+                if not Path(data['path']).is_file():
+                    self.client.send(['error','File {} not found!'.format(data['path'])])
                     return 
             with self.backend.lock:  
                 if 'id' in data:

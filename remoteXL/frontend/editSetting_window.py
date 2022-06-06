@@ -3,9 +3,9 @@ from PyQt5.QtWidgets import QMessageBox
 
 class EditSetting_Window(NewSetting_Window):
     
-    def __init__(self,set,remoteXLApp,parent=None,wait_loop=None):
+    def __init__(self,setting,remoteXLApp,parent=None,wait_loop=None):
         super().__init__(remoteXLApp,parent,wait_loop)
-        self.setting = set
+        self.setting = setting
         self.ui.title_label.setText('Edit:' )
         if self.remote_settings != self.setting['remote']:
             self.change_remote_local() 

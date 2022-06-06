@@ -1,1 +1,7 @@
 /testdata/
+/LOG/
+/config/
+/port
+/build/
+/__pycache__/
+/pylintrc

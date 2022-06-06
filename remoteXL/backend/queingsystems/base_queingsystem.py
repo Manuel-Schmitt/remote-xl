@@ -1,6 +1,8 @@
-from abc import ABC, abstractstaticmethod,abstractclassmethod
+from abc import ABC, abstractmethod
 import time
 from pathlib import PurePosixPath
+
+
 
 class BaseQuingsystem(ABC):
     
@@ -14,12 +16,12 @@ class BaseQuingsystem(ABC):
         try:
             if cls._displayname is None:
                 return cls.__name__
-            else:
-                return cls._displayname
+            return cls._displayname
         except AttributeError:
             return cls.__name__
 
-    @abstractstaticmethod
+    @staticmethod
+    @abstractmethod
     def needed_settings():
         raise NotImplementedError
         #all allowed settings are listed below
@@ -57,16 +59,19 @@ class BaseQuingsystem(ABC):
         
         return settings
     
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def allows_resubmission(cls,job):
         #return True if the quingsystem/jobscript reserves the resources for some time and allow the resubmission of the same ins/hkl files (with or without modification)
         #The local refinement job creates an empty 'RESTART' file as signal for the running job.
         return False
+    
     @classmethod
     def wait_time(cls,job):
         #only used if allow_resubmission() returns True
         #return the wait time in seconds
         return 0
+    
     
     @classmethod
     def output_filename(cls):
@@ -79,21 +84,27 @@ class BaseQuingsystem(ABC):
         #local path to the generated job script
         return job.ins_hkl_path.with_suffix('.job')
     
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def submit_job(cls,job):
         raise NotImplementedError
     
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def create_job_script(cls,job):
+        #Create the script which is run ( by the queingsystem of the remote host) to execute shelxl
+        #After the shelxl execution a file named 'DONE' has to be created in the remote_workdir   
         raise NotImplementedError
     
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def get_compute_node(cls,job):
         #return name of compute node as string
         raise NotImplementedError
-        return None
     
-    @abstractstaticmethod
+    
+    @staticmethod
+    @abstractmethod
     def job_status(job):
         #return 'queued', 'running' or 'stopped'
         raise NotImplementedError
@@ -125,11 +136,11 @@ class BaseQuingsystem(ABC):
     def check_settings(cls,settings:dict):       
         #return None if ok or error message as string
         if settings['user'] == '':
-             return 'Error: Username was not given'
+            return 'Error: Username was not given'
         if settings['host'] == '':
-             return 'Error: Host was not given'
+            return 'Error: Host was not given'
         if settings['shelxlpath'] == '':
-             return 'Error: Path to ShelXL was not given'      
+            return 'Error: Path to ShelXL was not given'      
         for needed in cls.needed_settings():
             if not needed['Name'] in settings['queingsystem']:
                 return 'Error: {} was not given'.format(needed['Lable'])
@@ -137,7 +148,7 @@ class BaseQuingsystem(ABC):
     
     @classmethod                    
     def all_subclasses(cls):
-            return set(cls.__subclasses__()).union([s for c in cls.__subclasses__() for s in c.all_subclasses()])
+        return set(cls.__subclasses__()).union([s for c in cls.__subclasses__() for s in c.all_subclasses()])
         
     @classmethod
     def get_subclass_by_name(cls,name):       
@@ -147,7 +158,7 @@ class BaseQuingsystem(ABC):
     
     @staticmethod
     def get_all_settings():   
-        all = []
+        all_settings = []
         for subclass in BaseQuingsystem.all_subclasses():
-            all.append( {'Name':subclass.name(),'Displayname': subclass.displayname(), 'Settings':subclass.needed_settings()} )
-        return all    
+            all_settings.append( {'Name':subclass.name(),'Displayname': subclass.displayname(), 'Settings':subclass.needed_settings()} )
+        return all_settings    

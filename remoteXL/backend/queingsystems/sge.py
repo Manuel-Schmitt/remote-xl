@@ -11,12 +11,12 @@ class Sun_Grid_Engine(BaseQuingsystem):
         script= cls.job_script_path(job)  
         encoding = job.remote_host.config.run.encoding or 'UTF-8'
         with open(script, 'w',encoding=encoding,newline='\n') as f:
-            f.write('#!/bin/sh\n\n')
+            f.write('#!/bin/bash\n\n')
             # Join stdout and stderr:
             f.write('#$ -j y\n')
             if job.setting['queingsystem']['queue'] != '':
                 f.write('#$ -q {}\n'.format(job.setting['queingsystem']['queue']))
-            if job.setting['queingsystem']['cpu'] > 1:
+            if job.setting['queingsystem']['pe'] != '':
                 f.write('#$ -pe {} {}\n'.format(job.setting['queingsystem']['pe'],job.setting['queingsystem']['cpu']))
             if job.setting['queingsystem']['ram'] != 0:
                 f.write('#$ -l mem_total={}M\n'.format(job.setting['queingsystem']['ram']))
@@ -27,53 +27,55 @@ class Sun_Grid_Engine(BaseQuingsystem):
                 new_walltime_string = hours_including_days + ':' + minutes + ':00'
                 #SGE format for walltime_string is hours:minutes:seconds
                 f.write('#$ -l h_rt={}\n'.format(new_walltime_string))
-                
-            f.write('\nINPUTDIR="$(pwd)"\n\n')
-            
-            if job.setting['queingsystem']['wait_time'] != 0:
-                f.write('\n')
-                f.write('touch RESTART\n')
-                f.write('START_TIME="$(date +%s)"\n')
-                f.write('\nwhile [ $(date +%s) -le $(($START_TIME + {} )) ];do\n'.format(cls.wait_time(job)))
-                f.write('if [ -f "$INPUTDIR/RESTART" ];then\n')
-                f.write('rm  "$INPUTDIR/RESTART" \n')
+            f.write('\nulimit -s 500000\n')    
+            f.write('\nINPUTDIR="$(pwd)"\n')
             
             
-            f.write('if [ ! -z "$TMPDIR" ];then\n')
+            f.write('if [ -z "$TMPDIR" ];then\n')
+            f.write('TMPDIR="/tmp/${JOB_ID}_${JOB_NAME}"\n')
+            f.write('mkdir -p "$TMPDIR"\n')
+            f.write('fi\n\n')
             f.write('cp "$INPUTDIR/{}" "$TMPDIR"\n'.format(job.ins_name))
             f.write('cp "$INPUTDIR/{}" "$TMPDIR"\n'.format(job.hkl_name))
             f.write('cd "$TMPDIR"\n')
-            f.write('fi\n\n')
+            
+            f.write('echo "$(hostname):$(pwd)" > "$INPUTDIR/RUNDIR"\n')
+            if job.setting['queingsystem']['wait_time'] != 0:
+                f.write('\n')
+                f.write('START_TIME="$(date +%s)"\n')
+                f.write('\nwhile [ $(date +%s) -le $(($START_TIME + {} )) ];do\n'.format(cls.wait_time(job)))
+                f.write('if [ -f "{}" -a -f "{}" ];then\n'.format(job.ins_name,job.hkl_name)) 
+
             
             f.write('{} {} {} -t{} > "$INPUTDIR/{}" 2>&1 \n'.format(job.setting['shelxlpath'],job.ins_hkl_name,' '.join(job.setting['shelxl_args']),job.setting['queingsystem']['cpu'],cls.output_filename()))
+            f.write('touch DONE \n')
             
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\nSTART_TIME="$(date +%s)"\n')
             
-            f.write('\nif [ ! -z "$TMPDIR" ];then\n')
-            f.write('mv * "$INPUTDIR"\n'.format(job.ins_name))
-            f.write('fi\n\n')
+            f.write('mv * "$INPUTDIR"\n')
         
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\n')
                 f.write('fi\n')
                 f.write('sleep 2\n')
                 f.write('done\n')
-    
-            #TODO: Change job script so the job does not wait when shelxl exits with exit code != 0
+                
+            f.write('rm -rf "$TMPDIR"\n\n')
+
             
             
     @classmethod
     def submit_job(cls,job):
         
         result = job.remote_host.run("cd '{}' && qsub '{}'".format(job.remote_workdir,job.job_script_path.name),hide=True)
-        id = result.stdout.split()[2]
+        job_id = result.stdout.split()[2]
         try:
             #This test if the extracted string is really the job id (is integer). However, the job id is store as string
-            id_int = int(id)
-        except ValueError:
-            raise ValueError("The job id '{]' is not an integer".format(id))      
-        return id 
+            job_id_int = int(job_id)
+        except ValueError as exc:
+            raise ValueError("The job id '{}' is not an integer".format(job_id)) from exc     
+        return job_id 
     
     @staticmethod
     def job_status(job):
@@ -98,11 +100,10 @@ class Sun_Grid_Engine(BaseQuingsystem):
                     state = fields[state_position]
                     if state == 'q':
                         return 'queued'
-                    else:
-                        return 'running'
-                else:
-                    #Job is in qstat, but state is unknown. Assume job is running
                     return 'running'
+
+                #Job is in qstat, but state is unknown. Assume job is running
+                return 'running'
         #job is not in qstat
         return 'stopped'
     
@@ -110,8 +111,10 @@ class Sun_Grid_Engine(BaseQuingsystem):
     def allows_resubmission(cls,job):
         return job.setting['queingsystem']['wait_time'] != 0
     
+
+            
     @classmethod
-    def get_compute_node(cls,job):
+    def get_compute_node(cls,job):   
         #return name of compute node as string
         result = job.remote_host.run('qstat',hide=True)
         queue_position = None
@@ -137,7 +140,8 @@ class Sun_Grid_Engine(BaseQuingsystem):
                 return compute_node
 
         #job is not in qstat
-        return None
+        
+        return None    
     
     @classmethod
     def wait_time(cls,job):
@@ -204,21 +208,3 @@ class Sun_Grid_Engine(BaseQuingsystem):
         return None
         
     
-class testclass(BaseQuingsystem):
-    _displayname = 'TTTTEST'
-    
-    @staticmethod
-    def needed_settings():
-        settings = []
-        settings.append({
-            'Name' : 'Test',
-            'Label':'Test',
-            'Type' : 'LineEdit'
-        })
-        settings.append({
-            'Name' : 'ram',
-            'Label':'RAM per core (MB)',
-            'Type' : 'SpinBox',
-        }) 
-                    
-        return settings

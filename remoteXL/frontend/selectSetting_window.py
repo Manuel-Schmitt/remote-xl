@@ -1,16 +1,13 @@
-import sys
-import socket
-import json
 import logging
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QLabel, QLineEdit, QComboBox, QSpinBox,QHBoxLayout,QFormLayout,QSizePolicy, QTableWidgetItem,QGridLayout, QVBoxLayout,QDialog
+from PyQt5.QtWidgets import QMainWindow, QPushButton,QWidget, QLabel,QHBoxLayout,QGridLayout, QVBoxLayout,QDialog
 from PyQt5.QtGui import  QFont
-from PyQt5.QtCore import QSize, QEventLoop
+from PyQt5.QtCore import QSize
 from PyQt5 import Qt
 from remoteXL.gui.Ui_SelectSetting_Window import Ui_SelectSetting_Window
 from remoteXL.frontend.newSetting_window import NewSetting_Window
 from remoteXL.frontend.editSetting_window import EditSetting_Window
-from remoteXL import main
+
 
 
 class SelectSetting_Window(QMainWindow):
@@ -29,6 +26,7 @@ class SelectSetting_Window(QMainWindow):
         self.ui.new_pushButton.clicked.connect(self.new_pressed)
         self.ui.edit_pushButton.clicked.connect(self.edit_pressed)
         self.ui.run_pushButton.clicked.connect(self.run_pressed)
+        self.ui.setting_tableWidget.cellDoubleClicked.connect(self.run_pressed)
         self.show()
         
     def section_moved(self,logical_position,old_position,new_position):   
@@ -36,7 +34,7 @@ class SelectSetting_Window(QMainWindow):
         self.set_setting_table() 
         
 
-    def run_pressed(self):
+    def run_pressed(self,*args):
         
         row = self.ui.setting_tableWidget.currentRow()    
         if row != -1: 
@@ -80,7 +78,7 @@ class SelectSetting_Window(QMainWindow):
         
  
 class CellWidget(QWidget):
-     def __init__(self,setting:dict):
+    def __init__(self,setting:dict):
         self.setting = setting
         super().__init__()
         self.gridLayout = QGridLayout(self)
@@ -137,7 +135,7 @@ class CellWidget(QWidget):
         self.adjustSize()
         
 class RunningJobDialog(QDialog):
-    def __init__(self,setting:dict,start_time):
+    def __init__(self,setting:dict,start_time,ins_changed,continue_function,stop_function):
         super().__init__()
         
         self.setWindowTitle('remoteXL')
@@ -145,15 +143,32 @@ class RunningJobDialog(QDialog):
         layout = QVBoxLayout()
         layout.addWidget(QLabel('Refinement was started at {} with:'.format(start_time)))
         layout.addWidget(CellWidget(setting))
-        
+             
         button_widget = QWidget()
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(2,2,2,2)
-        self.continue_button = QPushButton('Continue')
-        self.continue_button.setMaximumSize(QSize(100, 16777215))
-        button_layout.addWidget(self.continue_button)
-        button_widget.setLayout(button_layout)
         
+        self.continue_button = QPushButton('Continue')
+        self.continue_button.setMaximumSize(QSize(100, 1000))       
+        self.continue_button.clicked.connect(lambda: continue_function(setting, self))
+        
+        self.keep_job_button = QPushButton('Continue refinement')
+        self.keep_job_button.setMaximumSize(QSize(150, 1000))
+        self.keep_job_button.clicked.connect(lambda: continue_function(setting, self))
+        
+        self.keep_changes_button = QPushButton('Keep changes')
+        self.keep_changes_button.setMaximumSize(QSize(100, 1000))
+        self.keep_changes_button.clicked.connect(stop_function)
+        
+        if ins_changed:
+            layout.addWidget(QLabel('ATTENTION: The ins file was modified after the refinement was started!'))
+            layout.addWidget(QLabel('How do you want to proceed?'))
+            button_layout.addWidget(self.keep_changes_button)
+            button_layout.addWidget(self.keep_job_button)
+        else:        
+            button_layout.addWidget(self.continue_button)
+        
+        button_widget.setLayout(button_layout)
         layout.addWidget(button_widget)
         
         self.setLayout(layout)

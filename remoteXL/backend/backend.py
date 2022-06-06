@@ -1,18 +1,14 @@
 
-from  multiprocessing.connection import Connection, Listener
+from  multiprocessing.connection import Listener
 import threading
-import time
 import json
 import logging
-import os
 import socket
-
+import time
 
 from remoteXL import  main
-from remoteXL.backend import config, client_handler,refinement_job
+from remoteXL.backend import client_handler,refinement_job,config
 
-import subprocess
-import sys
 
 class RemoteXLBackend():
 
@@ -23,55 +19,57 @@ class RemoteXLBackend():
         self.stop_event = threading.Event()
         self.lock = threading.RLock()
         self.listener = self.create_listener()
-        self.remote_connections = list()
-        self.running_jobs = list()
+        self.remote_connections = []
+        self.running_jobs = []
         
-        self.config = config.Config(self,main.get_backendconfig_path())        
+        self.config = config.Config(self,main.get_config_path())        
         for job_data in self.config.running_jobs:
             job = refinement_job.RefinementJob.from_json(self, job_data)
             self.running_jobs.append(job)
         
+        self.save_timer = refinement_job.RepeatTimer(600,self.config._save_config)
+        
         
     def run(self):
         self.logger.debug('Backend running')
-        
-        threads = list()
+        self.save_timer.start()
+
         while not self.stop_event.is_set():
             
             try:
                 client_connection = self.listener.accept()
                 self.logger.debug("Client_handler started")
-                #TODO: Maybe implement ClientHandler with multiprocessing instead of Thread?
                 handler = client_handler.ClientHandler(self,client_connection) 
                 handler.start()    
-                threads.append(handler)
             except socket.timeout:
                 pass
-            
+  
         self.listener.close()
-        #TODO: Add wait for threads
+        
+        total_timeout = time.time() + 15
+        for thread in threading.enumerate():
+            if thread == threading.main_thread() or thread.isDaemon():
+                continue
+            thread.join(timeout=(total_timeout-time.time()))
+        if self.save_timer.is_alive():
+            self.save_timer.cancel()
+        self.config._config_data_changed = True
         self.config._save_config()
         
     def create_listener(self):
         listener = Listener(('localhost',0))
         port = listener.address[1]
-       
-        dir = os.path.dirname(main.get_port_path())
-        if not os.path.exists(dir):
-            os.makedirs(dir)
-        
+               
         with open(main.get_port_path(), "w") as jsonfile:
             json.dump({'port':port}, jsonfile,)    
             
         listener._listener._socket.settimeout(3)
         return listener           
     
-                    
-
-    
             
     def stop(self):
-         self.stop_event.set()      
+        self.stop_event.set()      
+
 
 
         

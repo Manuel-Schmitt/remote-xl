@@ -1,54 +1,49 @@
 
 import sys
 import time
-import signal
 import logging
 from pathlib import Path
-
-
-import ctypes
-import win32serviceutil
-import win32service, pywintypes
-
-
 from typing import Type
 import traceback
 import os
 import getpass
-from pathlib import Path
+
+import ctypes
+import win32serviceutil
+import win32service
+import pywintypes
+import servicemanager
+
 import psutil
 
 from PyQt5.QtWidgets import QApplication,QMessageBox
-
 
 from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING
 from remoteXL.backend import remoteXL_service
 from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 
-def get_log_path(is_service=False)  -> str:  
-    #TODO update
-    
-    if is_service:
-        return r'C:\Users\Manuel\remoteXL-backend.log'
-    
-    return r'C:\Users\Manuel\remoteXL.log'
-    
-    
-    
-    if is_service:
-       return os.environ['ALLUSERSPROFILE']+r'\remoteXL\remoteXL_service.log' 
-    return os.environ['ALLUSERSPROFILE']+r'\remoteXL\remoteXL_client.log'
-def get_port_path()  -> str:  
-    #TODO update
-    return os.environ['ALLUSERSPROFILE']+r'\remoteXL\port'
-def get_backendconfig_path()  -> str:  
-    #TODO update
-    return os.environ['ALLUSERSPROFILE']+r'\remoteXL\remoteXL.config'
-def get_config_path()  -> str:  
-    #TODO update
-    return os.environ['APPDATA']+r'\remoteXL\remoteXL.config'
 
-    
+
+
+########################
+# Known Bugs:
+#
+#  shelxl error: cant allocate memory results in job removed from running_job list although it should be waiting
+
+
+def get_log_path(is_service=False)  -> Path:
+    p = Path(__file__).parent / 'LOG'
+    p.mkdir(parents=True,exist_ok=True)  
+    if is_service:
+        return  p / 'remoteXL_service.log' 
+    return  p / 'remoteXL_client.log'
+def get_port_path()  -> Path:  
+    return  Path(__file__).parent / 'port'
+def get_config_path()  -> Path:  
+    p = Path(__file__).parent / 'config'
+    p.mkdir(parents=True,exist_ok=True)
+    return p / 'remoteXL.config'
+
 
 
 
@@ -67,7 +62,7 @@ def create_crash_report(exc:BaseException) -> str :
     errortext += ''.join(traceback.format_tb(exc.__traceback__)) + '\n'
     errortext += str(type(exc).__name__) + ': '
     errortext += str(exc) + '\n'
-    errortext += '-' * 80 + '\n'    
+    errortext += '-' * 80 + '\n'
     return errortext
 
 
@@ -75,16 +70,16 @@ def my_exception_hook(exctype:Type[BaseException], exc:BaseException, error_trac
     """
     Hook to create debug reports.
     """
-    logger.error(create_crash_report(exc))       
+    logger.error(create_crash_report(exc))
     sys.__excepthook__(exctype, exc, error_traceback)
     sys.exit(1)
-    
-class StreamToLogger(object):
+
+class StreamToLogger:
     """
     Fake file-like stream object that redirects writes to a logger instance.
     """
-    def __init__(self, logger, log_level=logging.INFO,old_out=None):
-        self.logger = logger
+    def __init__(self, l, log_level=logging.INFO,old_out=None):
+        self.logger = l
         self.log_level = log_level
         self.linebuf = ''
         self.old_out = old_out
@@ -100,7 +95,7 @@ class StreamToLogger(object):
             # translates them so this is still cross platform.
             if line[-1] == '\n':
                 self.logger.log(self.log_level, line.rstrip())
-                if self.old_out is not None: 
+                if self.old_out is not None:
                     self.old_out.write(line)
             else:
                 self.linebuf += line
@@ -121,43 +116,57 @@ def run_service_command(commands:list) ->None:
     sys.stderr = StreamToLogger(logger, logging.WARNING,sys.stderr) 
     return_code = win32serviceutil.HandleCommandLine(remoteXL_service.RemoteXLService,argv=commands)     
     if return_code != 0:
-        logger.error('Could not {} remoteXL Service. Error: '.format(str(commands)) +str(return_code))
+        logger.error('Could not %s remoteXL Service. Error: ', str(commands)+str(return_code))
         sys.exit(1)
     #Restore original stdout
     sys.stdout, sys.stderr = original_stdout, original_stderr
-   
+
 def wait_for_service_status(*status,timeout=10):
     timeout_start = time.time()
+    service_status = None
     while time.time() < timeout_start + timeout:
-        try:       
-            service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
-            if service_status in status:
-                logger.debug('remoteXL Service status: {}'.format(service_status))
-                return
-        except pywintypes.error as err:
-            #remoteXL-Service not installed
-            pass
+        service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
+        if service_status in status:
+            logger.debug('remoteXL Service status: %s',service_status)
+            return
+
         time.sleep(0.5) 
-    logger.error('remoteXL Service is not responding! Status: {}'.format(service_status))  
+    logger.error('remoteXL Service is not responding! Status: %s',str(service_status))  
     QMessageBox.warning(None, 'remoteXL: Error','RemoteXL service is not responding! Try to restart the service', QMessageBox.Ok) 
-    sys.exit(1)
+    raise TimeoutError('remoteXL Service is not responding!')
     
-def wait_for_children():
+def wait_for_children(timeout=10):
     try:
         own_process = psutil.Process(os.getpid())
         children = own_process.children()
-        for c in children:
-            if c.name == 'python.exe': 
-                c.wait(timeout=10)     
+        timeout_start = time.time()
+        while time.time() < timeout_start + timeout:
+            children = own_process.children()
+            child_running = False 
+            for c in children:
+                logger.debug('P: %s',c.name())
+                if c.name() == Path(sys.executable).name :
+                    child_running = True
+                    break
+            if child_running:
+                time.sleep(0.5) 
+            else:
+                return
+        logger.error('Timeout when waiting for remoteXL service!')  
+        QMessageBox.error(None, 'remoteXL: Error','Timeout when waiting for remoteXL service!', QMessageBox.Ok)    
+        raise TimeoutError
     except psutil.NoSuchProcess:
         return
-    except psutil.TimeoutExpired:
-        logger.error('Timeout when waiting for remoteXL service!')  
-        QMessageBox.error(None, 'remoteXL: Error','Timeout when waiting for remoteXL service!', QMessageBox.Ok) 
-        sys.exit(1)
        
     
 def check_service():
+    
+    if '--Service-Call' in sys.argv: 
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(remoteXL_service.RemoteXLService)
+        servicemanager.StartServiceCtrlDispatcher()
+        sys.exit(0)   
+        
     service_running = False
     service_installed = True
     try:       
@@ -168,11 +177,12 @@ def check_service():
         elif service_status == win32service.SERVICE_RUNNING:
             logger.debug('remoteXL Service is running.') 
             service_running = True   
-    except pywintypes.error as err:
+    except pywintypes.error:
         #remoteXL-Service not installed
         service_installed = False
-   
-   
+
+
+
     if '--StartService' in sys.argv: 
         #Need admin privileges to install or start service  
         if is_admin():                     
@@ -239,6 +249,7 @@ def check_service():
         else:
             logger.error('Error: Admin privileges are needed to change remoteXL service')
             sys.exit(1)
+
      
     if not service_installed:   
         #Re-run the program with admin rights in separate shell to install and start service
@@ -264,17 +275,17 @@ def check_service():
             installed_version = display_name.replace('remoteXL-Service-V','').strip()
         finally:
             win32service.CloseServiceHandle(hs)
-    except win32service.error as err:
-         logger.warning('Could not get version of installed remoteXL service! Continue...') 
+    except win32service.error:
+        logger.warning('Could not get version of installed remoteXL service! Continue...') 
     finally:
         win32service.CloseServiceHandle(hscm)
 
 
     if installed_version is not None:
-        logger.debug('remoteXL-Service V{} is installed'.format(installed_version))      
+        logger.debug('remoteXL-Service V%s is installed',installed_version)      
         if installed_version != str(VERSION):
             #Re-run the program with admin rights in separate shell to update and start service
-            logger.warning('remoteXL-Service V{} is out of date. Updating to V{}'.format(installed_version,VERSION))  
+            logger.warning('remoteXL-Service V%s is out of date. Updating to V%s',installed_version,VERSION)  
             response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is out of date.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
             if response == QMessageBox.Ok:
                 ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([sys.argv[0],'--UpdateService']), None, 0)
@@ -289,7 +300,7 @@ def check_service():
         #Re-run the program with admin rights in separate shell to start service
         response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is not running.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
         if response == QMessageBox.Ok:    
-            #TODO: RMEOVE
+            #TODO: REMOVE
             #ALWAYS UPDATE
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([sys.argv[0],'--UpdateService']), None, 0)
             #ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([sys.argv[0],'--StartService']), None, 0)       
@@ -311,14 +322,11 @@ if __name__ == '__main__':
     logger.addHandler(fh)
 
     sys.excepthook = my_exception_hook
-    logger.info('remoteXL started. Sys.args: ' + str(sys.argv))    
-    logger.debug('USER: '+str(getpass.getuser()))
-    logger.debug('HOME: '+ str(Path.home()))
-    logger.debug('CWD: '+str(os.getcwd()))
-    logger.debug('Is Admin? '+str(is_admin()))
-   
-
-
+    logger.info('remoteXL started. Sys.args: %s', str(sys.argv))    
+    logger.debug('USER: %s',str(getpass.getuser()))
+    logger.debug('HOME: %s', str(Path.home()))
+    logger.debug('CWD: %s', str(os.getcwd()))
+    logger.debug('Is Admin? %s', str(is_admin()))
 
     
     qapp = QApplication([])

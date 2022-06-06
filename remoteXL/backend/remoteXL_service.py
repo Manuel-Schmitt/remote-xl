@@ -1,6 +1,5 @@
 
 import sys
-import time
 import logging
 import os
 import getpass
@@ -15,9 +14,12 @@ from remoteXL.backend import backend
 class RemoteXLService(win32serviceutil.ServiceFramework):
     _svc_name_ = "remoteXL-Service"
     _svc_display_name_ = "remoteXL-Service-V{}".format(VERSION)
-    _svc_description_ = "Background Process of remoteXL for file synchronization"
+    _svc_description_ = "Background process of remoteXL for file synchronization"
+    _exe_args_ = "--Service-Call"
            
     def __init__(self, args):
+        
+        self.backend = None
         
         try:
             win32serviceutil.ServiceFramework.__init__(self, args)
@@ -35,10 +37,10 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
             self.paramiko_logger.addHandler(fh)    
             
             
-            self.logger.debug('remoteXL-Service V{}: Initialized'.format(VERSION) )
-            self.logger.debug('CWD: '+str(os.getcwd()))
-            self.logger.debug('USER: '+str(getpass.getuser()))
-            self.logger.debug('HOME: '+ str(Path.home()))
+            self.logger.debug('remoteXL-Service V%s: Initialized',str(VERSION) )
+            self.logger.debug('CWD: %s',str(os.getcwd()))
+            self.logger.debug('USER: %s',str(getpass.getuser()))
+            self.logger.debug('HOME: %s', str(Path.home()))
             #Service has no console -> redirect to log
             sys.stdout = main.StreamToLogger(self.logger, logging.DEBUG)
             sys.stderr = main.StreamToLogger(self.logger, logging.WARNING)
@@ -67,9 +69,9 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
         try:
             self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
             self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-            self.logger.info('remoteXL-Service V{}: Running'.format(VERSION) )
+            self.logger.info('remoteXL-Service V%s: Running',str(VERSION))
             
-        
+
             self.backend = backend.RemoteXLBackend()
             self.backend.run()
             
