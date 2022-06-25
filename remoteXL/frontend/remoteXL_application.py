@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QApplication,QMessageBox,QInputDialog,QLineEdit
-
+from PyQt5.QtCore import QSettings
 
 import logging
 import socket
@@ -7,16 +7,24 @@ import json
 import time
 from datetime import timedelta 
 import sys
+import psutil
+import os
 import subprocess
 from pathlib import Path
+
+import win32api
+import win32con
+import win32job
 
 import msvcrt
 from win32pipe import PeekNamedPipe  #pylint: disable=no-name-in-module
 
 from multiprocessing.connection import Connection 
+from multiprocessing import Process
 
 
 from remoteXL.frontend.selectSetting_window import SelectSetting_Window, RunningJobDialog
+from remoteXL.frontend.config_window import Config_Window
 from remoteXL import main
 
 class RemoteXL_Application():
@@ -27,6 +35,7 @@ class RemoteXL_Application():
         self.logger = logging.getLogger(__name__)     
         self.timeout = 5  
         self.app = qapp
+        self.ins_hkl_path = None
         self.backend_connection = self.connect_to_backend() 
 
     def authentication(self,setting,parent=None):
@@ -78,10 +87,13 @@ class RemoteXL_Application():
                                 
             elif backend_signal[0] == 'auth_ok':
                 return True
+            elif backend_signal[0] == 'auth_start':
+                continue
             elif backend_signal[0] == 'auth_error' or backend_signal[0] == 'error':
                 #Check ok_pressed here, so no error is displayed if cancel was clicked.
                 if ok_pressed:
                     QMessageBox.warning(parent, 'remoteXL: Error', backend_signal[1], QMessageBox.Ok)
+                    self.logger.warning('Error: %s',backend_signal[1])
                 return False
             else:  
                 QMessageBox.warning(parent, 'remoteXL: Error', 'Unknown error during authentication', QMessageBox.Ok)
@@ -106,8 +118,8 @@ class RemoteXL_Application():
             elif response[0] == 'auth_ok': 
                 pass
             elif response[0] == 'error': 
-                #TODO: Add logging after all QMessageBox.warnings
                 QMessageBox.warning(parent, 'remoteXL: Error', response[1], QMessageBox.Ok)
+                self.logger.warning('Error: %s',response[1])
                 self.stop_execution(1)
             else: 
                 QMessageBox.warning(parent, 'remoteXL: Error', 'Unknown signal during refinment start. {}'.format(response[0]), QMessageBox.Ok)
@@ -131,19 +143,35 @@ class RemoteXL_Application():
                         break    
                     elif data[0] == 'error': 
                         QMessageBox.warning(None, 'remoteXL: Error', data[1], QMessageBox.Ok)
+                        self.logger.warning('Error: %s',data[1])
                         break
                 except (EOFError,ConnectionResetError):    
-                    QMessageBox.warning(None, 'remoteXL: Error', 'Unknown error during refinment. See backround service log.', QMessageBox.Ok)
+                    QMessageBox.warning(None, 'remoteXL: Error', 'Unknown error during refinement. See background service log.', QMessageBox.Ok)
+                    self.logger.warning('Error: Unknown error during refinement. See background service log.')
                     self.stop_execution(1)
         else:   
             if parent is not None:
                 parent.close()               
-            shelxl = [setting['path']] #contains path to shelxl
-            shelxl.extend(sys.argv[1:])
+            shelxl_cmd = [setting['path']] #contains path to shelxl
+            shelxl_cmd.extend(sys.argv[1:])
             self.logger.info('Running local refinement of %s',str(Path(sys.argv[1]).absolute()))  
             self.backend_connection.close()
-            subprocess.run(shelxl,stdout=sys.stdout,stderr=sys.stderr, check=False)
-              
+ 
+            
+            hJob = win32job.CreateJobObject(None, "")
+            extended_info = win32job.QueryInformationJobObject(hJob, win32job.JobObjectExtendedLimitInformation)
+            extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            win32job.SetInformationJobObject(hJob, win32job.JobObjectExtendedLimitInformation, extended_info)
+            
+            CREATE_NO_WINDOW = 0x08000000
+            shelxl_process = subprocess.Popen(shelxl_cmd,stdout=sys.stdout,stderr=sys.stderr, creationflags=CREATE_NO_WINDOW)
+            # Convert process id to process handle:
+            perms = win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA
+            hProcess = win32api.OpenProcess(perms, False, shelxl_process.pid)
+
+            win32job.AssignProcessToJobObject(hJob, hProcess)
+            
+            shelxl_process.wait()
         
 
         run_time = int(time.time() - start_time)
@@ -154,24 +182,41 @@ class RemoteXL_Application():
         self.app.quit()   
             
     def exec_(self): 
-           
-              
+        self.check_shelxle_integration()  
+        
+        #TODO impelent
+        parent_process = psutil.Process(os.getpid()).parent()
+        if 'shelxle' in parent_process.name().lower():
+            pass
+        
+        
         #Check if sys.argv are from ShelXL call 
         #This is the case if sys.argv[1] contains the name of a ins & hkl file
-        if len(sys.argv) > 1 :
-            ins_hkl_path = Path(sys.argv[1]).absolute()
-            if ins_hkl_path.with_suffix('.ins').is_file() and ins_hkl_path.with_suffix('.hkl').is_file():
-                init_signal = ['init_refinement']
-                init_signal.append(str(ins_hkl_path))
-                #Append args for shelxl if available 
-                if len(sys.argv) > 2 :
-                    init_signal.append(sys.argv[2:])
-            else:     
-                QMessageBox.warning(None, 'remoteXL: Error', "One of the following files was not found.\n{p}.ins\n{p}.res".format(p=ins_hkl_path), QMessageBox.Ok)
-                self.stop_execution(1)
-        
-        else:
+        argv = sys.argv.copy()
+        if '-config' in argv:
             init_signal = ['config'] 
+            argv.remove('-config')
+        elif '--config' in argv:
+            init_signal = ['config'] 
+            argv.remove('--config')
+        elif len(argv) == 1:
+            init_signal = ['config'] 
+        else:
+            init_signal = ['init_refinement']
+            
+        
+        if len(argv) > 1 :
+            self.ins_hkl_path = Path(argv[1]).absolute()
+            if self.ins_hkl_path.with_suffix('.ins').is_file() and self.ins_hkl_path.with_suffix('.hkl').is_file():
+
+                init_signal.append(str(self.ins_hkl_path))
+                #Append args for shelxl if available 
+                if len(argv) > 2 :
+                    init_signal.append(argv[2:])
+            else:     
+                QMessageBox.warning(None, 'remoteXL: Error', "One of the following files was not found.\n{p}.ins\n{p}.res".format(p=self.ins_hkl_path), QMessageBox.Ok)
+                self.logger.warning("Error: One of the following files was not found.\n%s.ins\n%s.res",str(self.ins_hkl_path),str(self.ins_hkl_path))
+                self.stop_execution(1)
             
         response = self.call_backend(init_signal)
 
@@ -184,9 +229,7 @@ class RemoteXL_Application():
             setting = response[1]
             start_time = response[2]
             ins_changed = response[3]
-            
-            #TODO Change stop function and add Dialog
-            dialog = RunningJobDialog(setting,start_time,ins_changed,self.runXL,self.stop_execution)  #pylint: disable=unused-variable
+            dialog = RunningJobDialog(setting,start_time,ins_changed,lambda: self.runXL(setting),self.stop_refinement)  #pylint: disable=unused-variable
             
             
         elif response[0] == 'run':
@@ -196,22 +239,25 @@ class RemoteXL_Application():
             
             
         elif response[0] == 'config':
-            #TODO implement
-            raise NotImplementedError
+            config_data = response[1]
+            cw = Config_Window(config_data,self.ins_hkl_path,remoteXLApp=self)  #pylint: disable=unused-variable
         elif response[0] == 'error':
             QMessageBox.warning(None, 'remoteXL: Error', response[1], QMessageBox.Ok)
+            self.logger.warning('Error: %s',response[1])
             self.stop_execution(1)
         else:    
             QMessageBox.warning(None, 'remoteXL: Error', "Background service send unknown signal! Restart service and try again.", QMessageBox.Ok)
+            self.logger.warning("Error: Background service send unknown signal! Restart service and try again.")
             self.stop_execution(1)
                         
         return_code = self.app.exec_()
         self.stop_execution(return_code)
     
+    
+    #TODO: Change call_backend to handle error signal 
     def call_backend(self,signal):    
         self._send(signal)
         return self._get_data()
-
     
     def connect_to_backend(self):
         s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -230,8 +276,9 @@ class RemoteXL_Application():
         self.logger.debug("Client connected to backend")    
         return connection    
     
-    def _send(self,signal):        
-        self.logger.debug('Client signal: %s',str(signal))
+    def _send(self,signal): 
+        if not signal[0] == 'auth' and not signal[0] == 'sshagent-recv' :   
+            self.logger.debug('Client signal: %s',str(signal))
         try: 
             self.backend_connection.send(signal)
         except EOFError:
@@ -263,10 +310,119 @@ class RemoteXL_Application():
             QMessageBox.warning(None, 'remoteXL: Error', "Connection to background service interrupted!", QMessageBox.Ok)
             self.logger.error(main.create_crash_report(err))
             self.stop_execution(1)             
-        
+       
+    def stop_refinement(self):
+        response = self.call_backend(['kill_job'])
+        if response[0] == 'ok':
+            sw = SelectSetting_Window(remoteXLApp=self)  #pylint: disable=unused-variable
+        elif response[0] == 'error':
+            QMessageBox.warning(None, 'remoteXL: Error', response[1], QMessageBox.Ok)
+            self.logger.warning('Error: %s',response[1])
+     
     def stop_execution(self,rc=0):
         if not self.backend_connection.closed:
             self.backend_connection.close()
         sys.exit(rc)      
     
+          
+        
 
+
+    def check_shelxle_integration(self):
+        
+        if not getattr(sys, 'frozen', False):
+            return
+        
+        
+        shelxle_config_parent_dir = Path(os.getenv('APPDATA')) / 'shelXle'
+        all_config_files = shelxle_config_parent_dir.glob('shelXle*.ini')
+        #Different shelXle versions use different config files, however the latest changed file has to belong to the currently running version
+        config_file_path = max(all_config_files,key=os.path.getmtime)
+        
+        #remoteXL is added to the 'Extra' block of the shelXle config file
+        
+        class External_Programm():
+            setting_dict = {
+                'ProgramNames':'Name',
+                'ProgramPaths':'Path',
+                'AlternativeExtensions':'ext',
+                'CommandLineOptions':'opt',
+                'ProgramArgs':'Arg',
+                'ProgramExtensions':'Ext',
+                'ProgramResIns':'Res2Ins',
+                'FileDialog':'fd',
+                'IconOverlay':'icov',
+                'OverlayPointSize':'icov',
+                'AltExtraIconPaths':'altIcon',
+                'ProgramDetached':'Detach',
+                }
+            def __init__(self,attr_dict=None):
+                if attr_dict is not None:
+                    for key,value in attr_dict.items():
+                        self.__setattr__(key,value)
+                        
+        remoteXL_setting_dict = {
+                'ProgramNames':'remoteXL',
+                'ProgramPaths':Path(sys.executable).as_posix(),
+                'AlternativeExtensions':'',
+                'CommandLineOptions':'--config',
+                'ProgramArgs':'2',
+                'ProgramExtensions':'2',
+                'ProgramResIns':'2',
+                'FileDialog':'0',
+                'IconOverlay':'0',
+                'OverlayPointSize':'36',
+                'AltExtraIconPaths':'',
+                'ProgramDetached':'2',
+                }
+        
+        def read_config(config):
+            
+            config.beginGroup('Extra')
+            size = config.beginReadArray('ProgramNames')
+            config.endArray()
+            programm_list = [External_Programm() for i in range(size)]
+            
+            for key,value in External_Programm.setting_dict.items():
+                config.beginReadArray(key)
+                for i in range(size):
+                    config.setArrayIndex(i)
+                    programm_list[i].__setattr__(key,config.value(value))
+                config.endArray()
+            config.endGroup()
+        
+            
+            return programm_list
+        
+        
+        def write_config(programm_list,config):
+
+            config.beginGroup('Extra')
+            size = len(programm_list)
+            
+            for key,value in External_Programm.setting_dict.items():
+                config.beginWriteArray(key)
+                for i in range(size):
+                    config.setArrayIndex(i)
+                    config.setValue(value,programm_list[i].__getattribute__(key))
+                config.endArray()
+            config.endGroup()
+            config.sync()
+        
+        
+        
+        config = QSettings(QSettings.IniFormat,QSettings.UserScope,'shelxle',config_file_path.stem)
+        programm_list = read_config(config)
+           
+        for programm in programm_list:
+            if programm.ProgramNames == 'remoteXL':
+                return
+        
+        response = QMessageBox.question(None, 'remoteXL','Should remoteXL be integrated in shelXle as an external program?', QMessageBox.No|QMessageBox.Yes) 
+        if response == QMessageBox.Yes: 
+            programm_list.append(External_Programm(remoteXL_setting_dict))
+            write_config(programm_list,config)
+            QMessageBox.information(None, 'remoteXL','ShelXle must be restarted for the changes to take effect.', QMessageBox.Ok) 
+            self.stop_execution(0)
+        
+       

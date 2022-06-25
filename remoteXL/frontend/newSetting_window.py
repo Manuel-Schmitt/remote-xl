@@ -8,13 +8,13 @@ from PyQt5.QtCore import QSize,Qt,QEventLoop
 from remoteXL.gui.Ui_NewSetting_Window import Ui_NewSetting_Window
 
 
-
 class NewSetting_Window(QMainWindow):
     
-    def __init__(self,remoteXLApp,parent=None,wait_loop=None):
+    def __init__(self,remoteXLApp,parent=None,wait_loop=None,show_run_button=True):
         super().__init__(parent)    
         self.remoteXLApp = remoteXLApp
-        if parent is not None:     
+        self.parent = parent
+        if self.parent is not None:     
             self.setWindowModality(Qt.WindowModality.WindowModal)  #pylint: disable=no-member
         self.wait_loop = wait_loop
         self.logger = logging.getLogger(__name__)
@@ -24,6 +24,12 @@ class NewSetting_Window(QMainWindow):
         
         self.remote_settings = True
         self.ui.local_widget.setVisible(False)
+        
+        if show_run_button:
+            self.ui.run_pushButton.clicked.connect(self.run_clicked)
+        else:
+            self.ui.run_pushButton.hide()
+        
         self.ui.local_remote_pushButton.clicked.connect(self.change_remote_local)
         self.ui.save_pushButton.clicked.connect(self.save_clicked)
         self.ui.browse_pushButton.clicked.connect(self.browse_for_shelxlPath)
@@ -38,16 +44,15 @@ class NewSetting_Window(QMainWindow):
         self.show()
         
     def add_known_settings_to_comboBoxes(self):
-        #TODO Finisch
         self.ui.host_comboBox.addItem('')
         self.ui.username_comboBox.addItem('')
         self.ui.shelxlpath_comboBox.addItem('')
         known_settings = self.remoteXLApp.call_backend(['known_settings'])
-        for idx,con in enumerate(known_settings):
-            if con['remote']:         
-                self.ui.host_comboBox.addItem(con['host'])
-                self.ui.username_comboBox.addItem(con['user'])
-                self.ui.shelxlpath_comboBox.addItem(con['shelxlpath'])
+        for setting in known_settings:
+            if setting['remote']:         
+                self.ui.host_comboBox.addItem(setting['host'])
+                self.ui.username_comboBox.addItem(setting['user'])
+                self.ui.shelxlpath_comboBox.addItem(setting['shelxlpath'])
 
         
     def browse_for_shelxlPath(self):
@@ -60,7 +65,15 @@ class NewSetting_Window(QMainWindow):
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:
             self.close()
-        
+            
+    def run_clicked(self):
+        new_setting = self._get_data()
+        response = self.remoteXLApp.call_backend(['new_setting',new_setting])
+        if response[0] == 'error':
+            QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
+        else:
+            self.close()
+            self.remoteXLApp.runXL(new_setting,self.parent)
     
     def wait_for_close(self):
         if self.wait_loop is None:           

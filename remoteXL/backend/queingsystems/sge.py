@@ -27,7 +27,7 @@ class Sun_Grid_Engine(BaseQuingsystem):
                 new_walltime_string = hours_including_days + ':' + minutes + ':00'
                 #SGE format for walltime_string is hours:minutes:seconds
                 f.write('#$ -l h_rt={}\n'.format(new_walltime_string))
-            f.write('\nulimit -s 500000\n')    
+            f.write('\nulimit -s unlimited\n')    
             f.write('\nINPUTDIR="$(pwd)"\n')
             
             
@@ -46,14 +46,17 @@ class Sun_Grid_Engine(BaseQuingsystem):
                 f.write('\nwhile [ $(date +%s) -le $(($START_TIME + {} )) ];do\n'.format(cls.wait_time(job)))
                 f.write('if [ -f "{}" -a -f "{}" ];then\n'.format(job.ins_name,job.hkl_name)) 
 
+            #TODO
+            #awk 'BEGIN{ORS=" " } {for(i=1;i<=NF;i++) print "\""$i"\"" }' RESTART
             
             f.write('{} {} {} -t{} > "$INPUTDIR/{}" 2>&1 \n'.format(job.setting['shelxlpath'],job.ins_hkl_name,' '.join(job.setting['shelxl_args']),job.setting['queingsystem']['cpu'],cls.output_filename()))
-            f.write('touch DONE \n')
+            
             
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\nSTART_TIME="$(date +%s)"\n')
             
             f.write('mv * "$INPUTDIR"\n')
+            f.write('touch ${INPUTDIR}/DONE \n')
         
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\n')
@@ -141,7 +144,11 @@ class Sun_Grid_Engine(BaseQuingsystem):
 
         #job is not in qstat
         
-        return None    
+        return None  
+      
+    @classmethod
+    def kill_job(cls,job):
+        job.remote_host.run('qdel {}'.format(job.job_id),hide=True)
     
     @classmethod
     def wait_time(cls,job):

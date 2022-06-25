@@ -22,7 +22,7 @@ class Slurm(BaseQuingsystem):
             if job.setting['queingsystem']['walltime'] != '0-0:0':
                 f.write('#SBATCH --time {}\n'.format(job.setting['queingsystem']['walltime']))
             f.write('##############################################\n')  
-            f.write('\nulimit -s 500000\n')
+            f.write('\nulimit -s unlimited\n')
             f.write('\nINPUTDIR="${SLURM_SUBMIT_DIR:=$(pwd)}"\n')
             f.write('TMP_WORK_DIR="${SCRATCH:=${TMPDIR:=/tmp/${USER}_${SLURM_JOB_NAME}}}"\n\n')
             f.write('test ! -d "${TMP_WORK_DIR}" && mkdir -p "${TMP_WORK_DIR}"\n')
@@ -40,13 +40,13 @@ class Slurm(BaseQuingsystem):
             
             
             f.write('\n{} {} {} -t{} > "$INPUTDIR/{}" 2>&1 \n'.format(job.setting['shelxlpath'],job.ins_hkl_name,' '.join(job.setting['shelxl_args']),job.setting['queingsystem']['cpu'],cls.output_filename()))
-            f.write('touch DONE \n')
+            
             
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\nSTART_TIME="$(date +%s)"\n')
             
             f.write('mv * "$INPUTDIR"\n')
-
+            f.write('touch ${INPUTDIR}/DONE \n')
         
             if job.setting['queingsystem']['wait_time'] != 0:
                 f.write('\n')
@@ -142,7 +142,10 @@ class Slurm(BaseQuingsystem):
         
         #job is not in qstat
         return None
-
+    
+    @classmethod
+    def kill_job(cls,job):
+        job.remote_host.run('scancel {}'.format(job.job_id),hide=True)
     
     @classmethod
     def wait_time(cls,job):

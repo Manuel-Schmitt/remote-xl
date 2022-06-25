@@ -1,8 +1,7 @@
-from pathlib import Path
 import shutil
 import logging
 import json
-
+from remoteXL import LOGLEVEL, VERSION 
 
 class Config():
     
@@ -13,9 +12,10 @@ class Config():
         self._config_data_changed = False
         self._last_modified = 0
         self._config_data = {}
+        self.version = VERSION
         self.known_settings = []
         self.running_jobs = []
-        self.global_default = None
+        self.global_defaults = None
         self.file_defaults = {}
         self._load_config()
      
@@ -80,6 +80,12 @@ class Config():
                 self._config_data_changed = False  
         except PermissionError as e:
             self._logger.warning('Could not write to config file %s ! %s Continuing...',str(self._config_path), str(e))
-            
+    
+    def get_config_data(self):
+        with self._backend.lock:
+            self.running_jobs = []
+            for job in self._backend.running_jobs:
+                self.running_jobs.append(job.to_json)
+            return self._config_data
 
     

@@ -24,26 +24,30 @@ from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 
 
 
-
 ########################
 # Known Bugs:
 #
-#  shelxl error: cant allocate memory results in job removed from running_job list although it should be waiting
+#  ShelXL trows Could not allocate memory sometimes
+
 
 
 def get_log_path(is_service=False)  -> Path:
-    p = Path(__file__).parent / 'LOG'
+    p = application_dir() / 'LOG'
     p.mkdir(parents=True,exist_ok=True)  
     if is_service:
-        return  p / 'remoteXL_service.log' 
+        return  p / 'remoteXL_service.log'
     return  p / 'remoteXL_client.log'
 def get_port_path()  -> Path:  
-    return  Path(__file__).parent / 'port'
+    return  application_dir() / 'port'
 def get_config_path()  -> Path:  
-    p = Path(__file__).parent / 'config'
+    p = application_dir() / 'config'
     p.mkdir(parents=True,exist_ok=True)
     return p / 'remoteXL.config'
 
+def application_dir() -> Path:
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
 
 
 
@@ -141,10 +145,8 @@ def wait_for_children(timeout=10):
         children = own_process.children()
         timeout_start = time.time()
         while time.time() < timeout_start + timeout:
-            children = own_process.children()
             child_running = False 
             for c in children:
-                logger.debug('P: %s',c.name())
                 if c.name() == Path(sys.executable).name :
                     child_running = True
                     break
@@ -160,13 +162,7 @@ def wait_for_children(timeout=10):
        
     
 def check_service():
-    
-    if '--Service-Call' in sys.argv: 
-        servicemanager.Initialize()
-        servicemanager.PrepareToHostSingle(remoteXL_service.RemoteXLService)
-        servicemanager.StartServiceCtrlDispatcher()
-        sys.exit(0)   
-        
+            
     service_running = False
     service_installed = True
     try:       
@@ -309,12 +305,18 @@ def check_service():
         else:
             logger.warning('Start of background service canceled!')
             sys.exit(1)
+
+
             
 if __name__ == '__main__':
+     
+    if '--Service-Call' in sys.argv: 
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(remoteXL_service.RemoteXLService)
+        servicemanager.StartServiceCtrlDispatcher()
+        sys.exit(0)          
     
     logger = logging.getLogger('remoteXL')
-
-    #fh = logging.FileHandler(Path.home().joinpath(Path(r'remoteXL.log')))
     fh = logging.FileHandler(get_log_path())
     fh.setFormatter(logging.Formatter(LOGFORMATSTRING))
     fh.setLevel(LOGLEVEL)
@@ -326,7 +328,7 @@ if __name__ == '__main__':
     logger.debug('USER: %s',str(getpass.getuser()))
     logger.debug('HOME: %s', str(Path.home()))
     logger.debug('CWD: %s', str(os.getcwd()))
-    logger.debug('Is Admin? %s', str(is_admin()))
+    logger.debug('Is Admin? %s', is_admin())
 
     
     qapp = QApplication([])

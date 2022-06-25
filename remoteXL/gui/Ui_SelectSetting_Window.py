@@ -64,7 +64,7 @@ class Ui_SelectSetting_Window(object):
         self.title_line.setObjectName("title_line")
         self.main_verticalLayout.addWidget(self.title_line)
         self.setting_tableWidget = QtWidgets.QTableWidget(self.main_widget)
-        self.setting_tableWidget.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked|QtWidgets.QAbstractItemView.EditKeyPressed)
+        self.setting_tableWidget.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.setting_tableWidget.setDragEnabled(True)
         self.setting_tableWidget.setDragDropMode(QtWidgets.QAbstractItemView.NoDragDrop)
         self.setting_tableWidget.setDefaultDropAction(QtCore.Qt.IgnoreAction)
@@ -130,3 +130,13 @@ class Ui_SelectSetting_Window(object):
         self.default_label.setText(_translate("SelectSetting_Window", "Set as default for this file:"))
         self.cancel_pushButton.setText(_translate("SelectSetting_Window", "Cancel"))
         self.run_pushButton.setText(_translate("SelectSetting_Window", "Run Refinement"))
+
+
+if __name__ == "__main__":
+    import sys
+    app = QtWidgets.QApplication(sys.argv)
+    SelectSetting_Window = QtWidgets.QMainWindow()
+    ui = Ui_SelectSetting_Window()
+    ui.setupUi(SelectSetting_Window)
+    SelectSetting_Window.show()
+    sys.exit(app.exec_())

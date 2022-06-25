@@ -21,35 +21,28 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
         
         self.backend = None
         
-        try:
-            win32serviceutil.ServiceFramework.__init__(self, args)
-                                  
-            fh = logging.FileHandler(main.get_log_path(True))
-            fh.setFormatter(logging.Formatter(LOGFORMATSTRING))
-            fh.setLevel(LOGLEVEL)
-            self.logger = logging.getLogger('remoteXL')
-            self.logger.setLevel(LOGLEVEL)
-            self.logger.addHandler(fh)      
-            
-            #TODO: Improve
-            self.paramiko_logger = logging.getLogger('paramiko')
-            self.paramiko_logger.setLevel(LOGLEVEL)
-            self.paramiko_logger.addHandler(fh)    
-            
-            
-            self.logger.debug('remoteXL-Service V%s: Initialized',str(VERSION) )
-            self.logger.debug('CWD: %s',str(os.getcwd()))
-            self.logger.debug('USER: %s',str(getpass.getuser()))
-            self.logger.debug('HOME: %s', str(Path.home()))
-            #Service has no console -> redirect to log
-            sys.stdout = main.StreamToLogger(self.logger, logging.DEBUG)
-            sys.stderr = main.StreamToLogger(self.logger, logging.WARNING)
-            
-            
-            
-        except BaseException as exc:
-            self.logger.error(main.create_crash_report(exc))
-            raise exc
+        self.logger = logging.getLogger('remoteXL')
+        self.logger.setLevel(LOGLEVEL)
+        fh = logging.FileHandler(main.get_log_path(True))
+        fh.setFormatter(logging.Formatter(LOGFORMATSTRING))
+        fh.setLevel(LOGLEVEL)
+        self.logger.addHandler(fh)      
+               
+        #TODO: Improve
+        self.paramiko_logger = logging.getLogger('paramiko')
+        self.paramiko_logger.setLevel(LOGLEVEL)
+        self.paramiko_logger.addHandler(fh)    
+        
+        
+        self.logger.debug('remoteXL-Service V%s: Initialized',str(VERSION) )
+        self.logger.debug('CWD: %s',str(os.getcwd()))
+        self.logger.debug('USER: %s',str(getpass.getuser()))
+        self.logger.debug('HOME: %s', str(Path.home()))
+        #Service has no console -> redirect to log
+        sys.stdout = main.StreamToLogger(self.logger, logging.DEBUG)
+        sys.stderr = main.StreamToLogger(self.logger, logging.WARNING)
+        
+        win32serviceutil.ServiceFramework.__init__(self, args)
         
         
 
@@ -57,8 +50,6 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
         try:
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             self.backend.stop()
-            #TODO Implement soft stop
-            #
         except BaseException as exc:
             self.logger.error(main.create_crash_report(exc))
             raise exc
@@ -67,8 +58,9 @@ class RemoteXLService(win32serviceutil.ServiceFramework):
 
     def SvcDoRun(self):
         try:
-            self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
+            self.ReportServiceStatus(win32service.SERVICE_START_PENDING)  
             self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+            
             self.logger.info('remoteXL-Service V%s: Running',str(VERSION))
             
 

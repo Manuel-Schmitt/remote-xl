@@ -1,6 +1,6 @@
 eclipse.preferences.version=1
+encoding//gui/Ui_Config_Window.py=utf-8
 encoding//gui/Ui_NewConnection_Window.py=utf-8
 encoding//gui/Ui_NewSetting_Window.py=utf-8
-encoding//gui/Ui_SelectConnection_Window.py=utf-8
 encoding//gui/Ui_SelectSetting_Window.py=utf-8
 encoding//gui/Ui_SelectionCellWidget.py=utf-8

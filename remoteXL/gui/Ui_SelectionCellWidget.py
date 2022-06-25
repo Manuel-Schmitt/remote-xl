@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'Ui_SelectionCellWidget.ui'
+# Form implementation generated from reading ui file '.\Ui_SelectionCellWidget.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.4
 #
@@ -49,3 +49,13 @@ class Ui_cell_widget(object):
         self.label_2.setText(_translate("cell_widget", "Queue: default"))
         self.label_3.setText(_translate("cell_widget", "CPU: 12"))
         self.label_4.setText(_translate("cell_widget", "Walltime: 07:00:00"))
+
+
+if __name__ == "__main__":
+    import sys
+    app = QtWidgets.QApplication(sys.argv)
+    cell_widget = QtWidgets.QWidget()
+    ui = Ui_cell_widget()
+    ui.setupUi(cell_widget)
+    cell_widget.show()
+    sys.exit(app.exec_())

@@ -8,6 +8,7 @@ from datetime import datetime
 import hashlib
 import re
 
+from remoteXL.util import RepeatTimer
 from remoteXL.backend.queingsystems.base_queingsystem import BaseQuingsystem
 from remoteXL.backend.remote_connection import RemoteConnection
 
@@ -46,6 +47,7 @@ class RefinementJob():
             
             self.remote_host = self.get_or_connect_remote_host()
             
+            #TODO: only one update_timer per remote_host and queingsystem
             update_timer = RepeatTimer(10, self.update_remote_job_status)
             finish_timer = RepeatTimer(2, self.check_finish_gracefully)
             self.ins_hkl_path.with_suffix('.fin').unlink(missing_ok=True)           
@@ -85,51 +87,52 @@ class RefinementJob():
                         
                         self._remote_rundir_string = self.remote_rundir_string
                             
-                        with self.remote_host.sftp().open(str(self.remote_output_path),mode="r") as output_file:
-                            encoding = self.remote_host.config.run.encoding or 'UTF-8'
-        
-                            while not self.backend.stop_event.is_set():
-                                output = output_file.read().decode(encoding)
-                                
-                                if self.remote_host.run('test -f "{}"'.format(str(self.remote_workdir/'DONE')),hide=True,warn=True).ok:                                      
-                                    self.get_results(wait=False)
-                                    output += output_file.read().decode(encoding)
-                                    self.client.send(['shelxl',output])
-                                    break   
-                                #shelxle activates the load res button, when 'for all data' was in the output
-                                #So, all files need to be transferred back before this is send to the client.                                                                    
-                                if 'for all data' in output or 'Total elapsed time:' in output:
-                                    finish_timer.cancel()
-                                    self.get_results()
-                                    output += output_file.read().decode(encoding)
-                                    self.client.send(['shelxl',output])
-                                    break
-                                if output == '':
-                                    if  self.remote_job_status == 'stopped':
+                            
+                        with self.remote_host.client.open_sftp() as sftp_client:  
+                            with sftp_client.open(str(self.remote_output_path),mode="r") as output_file:
+                                encoding = self.remote_host.config.run.encoding or 'UTF-8'
+                            
+                                while not self.backend.stop_event.is_set():
+                                    output = output_file.read().decode(encoding)
+                                    
+                                    if self.remote_host.run('test -f "{}"'.format(str(self.remote_workdir/'DONE')),hide=True,warn=True).ok:                                      
                                         self.get_results(wait=False)
+                                        output += output_file.read().decode(encoding)
+                                        self.client.send(['shelxl',output])
+                                        break   
+                                    #shelxle activates the load res button, when 'for all data' was in the output
+                                    #So, all files need to be transferred back before this is send to the client.                                                                    
+                                    if 'for all data' in output or 'Total elapsed time:' in output:
+                                        finish_timer.cancel()
+                                        self.get_results()
+                                        output += output_file.read().decode(encoding)
+                                        self.client.send(['shelxl',output])
                                         break
-                                    self.client.send(['shelxl',output])
-                                    time.sleep(sleep_time)
-                                else:
-                                    self.client.send(['shelxl',output])      
-                            break
-                        
+                                    if output == '' or output is None:
+                                        if  self.remote_job_status == 'stopped':
+                                            #TODO: Add error message
+                                            self.get_results(wait=False)
+                                            break
+                                        self.client.send(['shelxl',output])
+                                        time.sleep(sleep_time)
+                                    else:
+                                        self.client.send(['shelxl',output])      
+                                break
+                            
                     else:
                         if self.remote_job_status == 'stopped':
                             with self.backend.lock:
                                 if self in self.backend.running_jobs:
                                     self.backend.running_jobs.remove(self)
                             raise RuntimeError('Refinement job stopped, but no output was found!')
-                        else:
-                            time.sleep(sleep_time)
+                        
+                        time.sleep(sleep_time)
                     
                 self.client.send(['shelxl_done'])
                         
                 if self.backend.stop_event.is_set():
                     return
-            
-                
-                
+           
                 #clean up  
                 if self.queingsystem.allows_resubmission(self) and self.remote_job_status == 'running':
                     self.delete_remote_files(False)
@@ -172,6 +175,7 @@ class RefinementJob():
         
         self.client.send(['remoteXL','Job submitted as {}@{}'.format(self.setting['user'],self.setting['host'])])
         self.client.send(['remoteXL','Job id: {}'.format(self.job_id)])
+        
         
     def restart_job(self): 
         #To restart the job, the ins and hkl file need to be copied to the compute-nodes local run dir
@@ -256,9 +260,10 @@ class RefinementJob():
                 try:
                     if self.remote_host.run('test -f "{}"'.format(str(self.remote_workdir/'DONE')),hide=True,warn=True).ok:
                         break
-                    fcf_file_size = self.remote_host.sftp().stat(str(self.remote_workdir / (self.ins_hkl_name + '.fcf'))).st_size
-                    if fcf_file_size > 0:
-                        break
+                    #TODO: 
+                    #fcf_file_size = self.remote_host.sftp().stat(str(self.remote_workdir / (self.ins_hkl_name + '.fcf'))).st_size
+                    #if fcf_file_size > 0:
+                        #break
                 except FileNotFoundError:
                     pass
                 
@@ -268,6 +273,8 @@ class RefinementJob():
                 time.sleep(sleep_time)
         
         for file in self.remote_host.sftp().listdir(str(self.remote_workdir)):
+            if file == self.hkl_name:
+                continue
             if file == 'DONE':
                 continue
             if file == 'RUNDIR' and self._remote_rundir_string is None:
@@ -276,6 +283,8 @@ class RefinementJob():
         
     
     def update_remote_job_status(self):    
+        if self.remote_host is None or not self.remote_host.is_connected:
+            self.remote_host = self.get_remote_host()
         status = self.queingsystem.job_status(self)
         if self.queingsystem.allows_resubmission(self) and status == 'running' and self.remote_job_status == 'waiting':
             #job script on remote host is in waiting loop
@@ -345,7 +354,23 @@ class RefinementJob():
     @property
     def start_time_string(self):
         return datetime.fromtimestamp(self.start_time).strftime("%H:%M:%S (%d-%B-%Y)")
+    
+    def kill_job(self):
+        self.remote_host = self.get_remote_host()
+        self.queingsystem.kill_job(self)
+        self.remote_job_status = 'stopped'
+        if self.lock.locked():
+            #One client is in self.run and does the cleanup
+            return
         
+        with self.backend.lock:
+            if self in self.backend.running_jobs:
+                self.backend.running_jobs.remove(self)
+    
+        self.delete_remote_files(True)                      
+    
+    
+    
     @property
     def to_json(self):
         data = {
@@ -363,7 +388,7 @@ class RefinementJob():
     
     @classmethod
     def from_json(cls,backend,data):
-        job = cls(backend,data['local_file'],data['setting'])
+        job = cls(backend,Path(data['local_file']),data['setting'])
         job.job_id = data['job_id']
         job.remote_workdir = PurePosixPath(data['remote_workdir'])
         job.start_time = data['start_time']
@@ -405,11 +430,8 @@ class RefinementJob():
                     remote_connection = rc
                     self.client.send(['auth_ok']) 
                     return remote_connection
-                    
-        
+                         
         remote_connection = RemoteConnection.connect(self)             
-        with self.backend.lock:
-            self.backend.remote_connections.append(remote_connection)  
             
         return remote_connection
         
@@ -422,15 +444,3 @@ class RefinementJob():
             return str(self.ins_hkl_path) == other
         return False 
         
-       
-class RepeatTimer(Timer):
-    def __init__(self,interval, function,start_delay=0):
-        super().__init__(interval, function)
-        self.start_delay = start_delay
-        self.daemon = True
-        
-    def run(self):
-        self.finished.wait(self.start_delay)
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs) 
-    

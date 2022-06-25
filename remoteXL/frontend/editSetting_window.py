@@ -3,8 +3,8 @@ from PyQt5.QtWidgets import QMessageBox
 
 class EditSetting_Window(NewSetting_Window):
     
-    def __init__(self,setting,remoteXLApp,parent=None,wait_loop=None):
-        super().__init__(remoteXLApp,parent,wait_loop)
+    def __init__(self,setting,remoteXLApp,parent=None,wait_loop=None,show_run_button=True):
+        super().__init__(remoteXLApp,parent,wait_loop,show_run_button)
         self.setting = setting
         self.ui.title_label.setText('Edit:' )
         if self.remote_settings != self.setting['remote']:
@@ -52,3 +52,13 @@ class EditSetting_Window(NewSetting_Window):
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:
             self.close()
+            
+            
+    def run_clicked(self):
+        self.setting.update(self._get_data())
+        response = self.remoteXLApp.call_backend(['edit_setting',self.setting])
+        if response[0] == 'error':
+            QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
+        else:
+            self.close()
+            self.remoteXLApp.runXL(self.setting,self.parent)

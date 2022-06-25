@@ -111,7 +111,7 @@
     <item>
      <widget class="QTableWidget" name="setting_tableWidget">
       <property name="editTriggers">
-       <set>QAbstractItemView::DoubleClicked|QAbstractItemView::EditKeyPressed</set>
+       <set>QAbstractItemView::NoEditTriggers</set>
       </property>
       <property name="dragEnabled">
        <bool>true</bool>

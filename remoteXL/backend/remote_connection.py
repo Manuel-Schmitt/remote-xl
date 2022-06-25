@@ -11,7 +11,11 @@ from paramiko.ssh_exception import BadAuthenticationType, PartialAuthentication,
 
 class  RemoteConnection():
     @classmethod
-    def connect(cls,job):
+    def connect(cls,job,user=None,host=None):
+        if user is None:
+            user=job.setting['user']
+        if host is None:
+            host=job.setting['host']
         logger = logging.getLogger(__name__)
         job.client.send(['auth_start']) 
         ssh_agent_allowed = False       
@@ -23,16 +27,20 @@ class  RemoteConnection():
             logger.warning('Error: No signel recieved after auth_start' )
             job.client.send(['error','Error: No signel recieved after auth_start'])
             raise ValueError('Error: No signel recieved after auth_start')        
-
+        
         try:
             connection_config = Config(overrides={'load_ssh_configs':False,'timeouts': {'command': 10, 'connect': None}},lazy=True)
             #TODO: Determine encoding of remote host and dont assume UTF-8.
             connection_config.run.encoding = 'UTF-8'
-            remote_connection = Connection(job.setting['host'], user=job.setting['user'], config=connection_config,connect_kwargs={"allow_agent": ssh_agent_allowed,"auth_timeout": 10}, )
+            remote_connection = Connection(host, user=user, config=connection_config,connect_kwargs={"allow_agent": ssh_agent_allowed,"auth_timeout": 10}, )
             remote_connection.client = RemoteXLSSHClient(UserAuthHandler(job.client,job.backend))
             remote_connection.open()
             remote_connection.transport.set_keepalive(300)
             job.client.send(['auth_ok']) 
+            
+            with job.backend.lock:
+                job.backend.remote_connections.append(remote_connection)  
+            
             return remote_connection
         except Exception as e:
             errorstring = 'Connecting to remote host failed:\n{}: {}'.format(type(e).__name__,str(e))

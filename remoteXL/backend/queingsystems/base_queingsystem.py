@@ -102,6 +102,10 @@ class BaseQuingsystem(ABC):
         #return name of compute node as string
         raise NotImplementedError
     
+    @classmethod
+    @abstractmethod
+    def kill_job(cls,job):
+        raise NotImplementedError
     
     @staticmethod
     @abstractmethod

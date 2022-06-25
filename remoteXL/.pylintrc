@@ -20,7 +20,7 @@ analyse-fallback-blocks=no
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code.
-extension-pkg-allow-list=win32serviceutil,win32service,pywintypes,PyQt5,win32pipe
+extension-pkg-allow-list=win32serviceutil,win32service,pywintypes,PyQt5,win32pipe,win32api,win32con,win32job
 
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may

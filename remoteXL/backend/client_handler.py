@@ -3,10 +3,11 @@ from pathlib import Path
 import logging
 import uuid
 from  multiprocessing.connection import Connection
-
+from invoke.exceptions import UnexpectedExit
 from paramiko.ssh_exception import AuthenticationException
 
 from remoteXL.backend.refinement_job import RefinementJob
+from remoteXL.backend.remote_connection import RemoteConnection
 from remoteXL.backend.queingsystems.base_queingsystem import BaseQuingsystem
 
 #TODO: Explicit import needed for pyinstaller...
@@ -20,6 +21,8 @@ class ClientHandler(threading.Thread):
         self.backend = backend
         self.logger = logging.getLogger(__name__)
         self.ins_hkl_path = None
+        self.client_pid = None
+        self.shelxle_pid = None
         self.shelxl_args = ''
         
     def run(self):
@@ -61,7 +64,7 @@ class ClientHandler(threading.Thread):
                                 try:   
                                     #This may throw ValueError if not connected to remote host
                                     if job.is_waiting():       
-                                        #TODO: Check what happens if ValueError is triggered.               
+                                        #TODO: Check what happens if ValueError is triggered.
                                         self.client.send(['run',job.setting])
                                         continue
                                 except ValueError:
@@ -80,8 +83,8 @@ class ClientHandler(threading.Thread):
                         default_setting = None
                         if str(self.ins_hkl_path) in  self.backend.config.file_defaults:
                             setting_id = self.backend.config.file_defaults[str(self.ins_hkl_path)]
-                        elif  self.backend.config.global_default is not None:
-                            setting_id = self.backend.config.global_default
+                        elif  self.backend.config.global_defaults is not None:
+                            setting_id = self.backend.config.global_defaults
                         if setting_id is not None:    
                             for setting in self.backend.config.known_settings:
                                 if setting_id == setting['id']:
@@ -129,8 +132,48 @@ class ClientHandler(threading.Thread):
                         errorstring = '{}: {}'.format(type(e).__name__,str(e))
                         self.client.send(['error',errorstring])
                         raise e
+                elif client_signal[0] == 'stop_refinement': 
+                    #TODO Implement
+                    self.logger.debug('Stop refinement received!')
                     
-                        
+                     
+                elif client_signal[0] == 'kill_job': 
+                    if len(client_signal) > 1:  
+                        job_path = Path(client_signal[1])
+                    elif self.ins_hkl_path is not None:
+                        job_path = self.ins_hkl_path           
+                    else: 
+                        self.logger.warning('Error: No ins/hkl file was given during kill_job')
+                        self.client.send(['error','Error: No ins/hkl file was given'])
+                        continue  
+                    
+                    refinement_job = None
+                    with self.backend.lock:                 
+                        if job_path in self.backend.running_jobs:
+                            refinement_job = [j for j in self.backend.running_jobs if j == job_path][0]
+                        else:
+                            self.logger.warning('Error: Could not find running job of %s',str(job_path))
+                            self.client.send(['error','Could not find running job!'])
+                            continue  
+           
+                    try:
+                        refinement_job.kill_job()
+                        self.client.send(['ok'])
+                    except ValueError:
+                        errorstring = 'Error: Not connected to remote host {}@{}'.format(refinement_job.setting['user'],refinement_job.setting['host'])
+                        self.client.send(['error',errorstring])
+                        self.logger.warning(errorstring)
+                    except UnexpectedExit as e:
+                        errorstring = '{}: {}'.format(type(e).__name__,str(e))
+                        self.client.send(['error',errorstring])
+                        self.logger.warning(errorstring)  
+                    except Exception as e:
+                        errorstring = '{}: {}'.format(type(e).__name__,str(e))
+                        self.client.send(['error',errorstring])
+                        self.logger.warning(errorstring)  
+                        raise e                   
+                
+                          
                 elif client_signal[0] == 'known_settings': 
                     with self.backend.lock:
                         self.client.send(self.backend.config.known_settings)  
@@ -158,12 +201,30 @@ class ClientHandler(threading.Thread):
                         con = self.backend.config.known_settings.pop(old_position)
                         self.backend.config.known_settings.insert(new_position, con)
                 
-                elif client_signal[0] == 'set_global_default':
+                elif client_signal[0] == 'get_global_defaults':
+                    with self.backend.lock:
+                        self.client.send(self.backend.config.global_defaults)
+                elif client_signal[0] == 'get_file_defaults':
+                    file_path = self.ins_hkl_path
+                    if len(client_signal) > 1:
+                        file_path = client_signal[1]
+                    
+                    with self.backend.lock:
+                        if file_path is not None:
+                            if file_path in self.backend.config.file_defaults:
+                                setting_id = self.backend.config.file_defaults[str(file_path)]
+                            else:
+                                setting_id = ''
+                          
+                            self.client.send(setting_id)
+                        else:
+                            self.client.send(self.backend.config.file_defaults)
+                elif client_signal[0] == 'set_global_defaults':
                     default_setting = client_signal[1]
                     with self.backend.lock:
-                        self.backend.config.global_default = default_setting['id']
-                        
-                elif client_signal[0] == 'set_file_default':
+                        self.backend.config.global_defaults = default_setting['id']
+                    self.client.send(['ok']) 
+                elif client_signal[0] == 'set_file_defaults':
                     default_setting = client_signal[1]
                     if len(client_signal) > 2:
                         file_path = client_signal[2]
@@ -175,15 +236,81 @@ class ClientHandler(threading.Thread):
                     with self.backend.lock:
                         self.backend.config.file_defaults.update({file_path:default_setting['id']})
        
+                    self.client.send(['ok'])    
+                elif client_signal[0] == 'config':   
+                    with self.backend.lock:
+                        job_list = []
+                        for job in self.backend.running_jobs:
+                            connected = False
+                            try:
+                                job.update_remote_job_status()
+                                #TODO: Job state shows running even if job is done and only waiting for new refinement
+                                connected = True
+                                #ValueError is thrown when not connected to the remote host of the job
+                            except ValueError:
+                                pass
+                            job_data = job.to_json 
+                            if not connected:
+                                job_data['status'] = 'unknown'
+                            job_list.append(job_data)
                         
-                elif client_signal[0] == 'config':
+                        connection_list = []
+                        for rc in self.backend.remote_connections:
+                            if not rc.is_connected:
+                                self.backend.remote_connections.remove(rc)
+                                continue
+                            connection_list.append({'host':rc.host,'user':rc.user})
                     
-                     #TODO implement settings
-                    
-                    #Return saved setting values 
-                    self.client.send(['config'])
-                    
-                    
+                        config_data = self.backend.config.get_config_data().copy()
+                        config_data['running_jobs'] = job_list
+                        config_data['connections'] = connection_list
+                        self.client.send(['config',config_data])         
+                                     
+                elif client_signal[0] == 'new_connection':
+                    connection = None
+                    if len(client_signal) > 1:  
+                        connection = client_signal[1]
+                    if connection is None or not ('host' in connection and 'user' in connection):
+                        self.client.send(['error','Connection "{}" not recognized!'.format(connection)])
+                        continue  
+                   
+                    exists = False
+                    with self.backend.lock:        
+                        #Check if Connection already exists       
+                        for rc in self.backend.remote_connections:
+                            if not rc.is_connected:
+                                self.backend.remote_connections.remove(rc)
+                                continue
+                            if rc.host == connection['host'] and rc.user == connection['user']:
+                                self.client.send(['error','Connection {}@{} exists already!'.format(connection['user'],connection['host'])])
+                                exists = True
+                                break 
+                    if exists:
+                        continue
+                                      
+                    try:
+                        RemoteConnection.connect(self,connection['user'],connection['host'])
+                    except AuthenticationException:
+                        continue
+
+                elif client_signal[0] == 'disconnect':     
+                    connection = None
+                    if len(client_signal) > 1:  
+                        connection = client_signal[1]
+                    if connection is None or not ('host' in connection and 'user' in connection):
+                        self.client.send(['error','Connection "{}" not recognized!'.format(connection)])
+                        continue
+                                          
+                    success = False
+                    for rc in self.backend.remote_connections:
+                        if rc.host == connection['host'] and rc.user == connection['user']:
+                            rc.close()
+                            success = True
+                    if success:
+                        self.client.send(['ok'])  
+                    else:
+                        self.client.send(['error','Could not find remote connection {}@{}'.format(connection['user'],connection['host'])])  
+                           
                 elif client_signal[0] == 'auth':
                     self.logger.warning('Received auth signal in client handler! Continue.')
                     continue

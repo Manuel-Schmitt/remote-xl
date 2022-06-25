@@ -7,6 +7,7 @@ import socket
 import time
 
 from remoteXL import  main
+from remoteXL.util import RepeatTimer
 from remoteXL.backend import client_handler,refinement_job,config
 
 
@@ -27,7 +28,7 @@ class RemoteXLBackend():
             job = refinement_job.RefinementJob.from_json(self, job_data)
             self.running_jobs.append(job)
         
-        self.save_timer = refinement_job.RepeatTimer(600,self.config._save_config)
+        self.save_timer = RepeatTimer(600,self.config._save_config)
         
         
     def run(self):
@@ -55,6 +56,8 @@ class RemoteXLBackend():
             self.save_timer.cancel()
         self.config._config_data_changed = True
         self.config._save_config()
+        #TODO: Add logging
+        
         
     def create_listener(self):
         listener = Listener(('localhost',0))
