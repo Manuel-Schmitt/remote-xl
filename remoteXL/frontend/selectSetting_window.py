@@ -32,7 +32,7 @@ class SelectSetting_Window(QMainWindow):
         self.show()
         
     def section_moved(self,logical_position,old_position,new_position):   
-        self.remoteXLApp._send(['change_order',(old_position,new_position)])
+        self.remoteXLApp.call_backend(['change_order',(old_position,new_position)])
         self.set_setting_table() 
         
 

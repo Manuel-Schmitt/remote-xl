@@ -37,6 +37,7 @@ def get_log_path(is_service=False)  -> Path:
     if is_service:
         return  p / 'remoteXL_service.log'
     return  p / 'remoteXL_client.log'
+#TODO use psutil instead of port file
 def get_port_path()  -> Path:  
     return  application_dir() / 'port'
 def get_config_path()  -> Path:  
@@ -142,9 +143,9 @@ def wait_for_service_status(*status,timeout=10):
 def wait_for_children(timeout=10):
     try:
         own_process = psutil.Process(os.getpid())
-        children = own_process.children()
         timeout_start = time.time()
         while time.time() < timeout_start + timeout:
+            children = own_process.children()
             child_running = False 
             for c in children:
                 if c.name() == Path(sys.executable).name :
@@ -155,7 +156,7 @@ def wait_for_children(timeout=10):
             else:
                 return
         logger.error('Timeout when waiting for remoteXL service!')  
-        QMessageBox.error(None, 'remoteXL: Error','Timeout when waiting for remoteXL service!', QMessageBox.Ok)    
+        QMessageBox.warning(None, 'remoteXL: Error','Timeout when waiting for remoteXL service!', QMessageBox.Ok)    
         raise TimeoutError
     except psutil.NoSuchProcess:
         return

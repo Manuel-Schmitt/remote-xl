@@ -1,10 +1,10 @@
 import time
 import logging
 
-from threading import Timer,Lock
+from threading import Lock
 from pathlib import Path,PurePosixPath
 from datetime import datetime
-
+import io 
 import hashlib
 import re
 
@@ -22,13 +22,13 @@ class RefinementJob():
         
         ###These vars have to be saved and loaded with 'to_json' and 'from_json' 
         self.ins_hkl_path = ins_hkl_path
+        self.ins_hash = self.get_ins_hash(self.ins_path)
+        self.start_time = 0  
         self.setting = setting
         self.remote_workdir = None  #Job dir in the home directory of the user
         self.job_id = None
-        self.start_time = 0  
         self.remote_job_status = None
-        self._remote_rundir_string = None  #String consisting of compute-node-name:rundir-path. If this string is None, assume that the job runs in remote_workdir
-        self.ins_hash = self.get_ins_hash(self.ins_path)
+        self._remote_rundir_string = None  #String consisting of compute-node-name:rundir-path. If this string is None, assume that the job runs in remote_workdir    
         ###
         
         self.delete_timer = None
@@ -47,7 +47,7 @@ class RefinementJob():
             
             self.remote_host = self.get_or_connect_remote_host()
             
-            #TODO: only one update_timer per remote_host and queingsystem
+            #TODO: only one update_timer per remote_host, user and queingsystem
             update_timer = RepeatTimer(10, self.update_remote_job_status)
             finish_timer = RepeatTimer(2, self.check_finish_gracefully)
             self.ins_hkl_path.with_suffix('.fin').unlink(missing_ok=True)           
@@ -168,6 +168,8 @@ class RefinementJob():
         self.remote_host.put(str(self.ins_path),str(self.remote_workdir))
         self.remote_host.put(str(self.hkl_path),str(self.remote_workdir))
         self.remote_host.put(str(self.job_script_path),str(self.remote_workdir))
+        self.remote_host.put(str(self.job_script_path),str(self.remote_workdir))
+        self.remote_host.put(io.StringIO("{} {}".format(self.ins_hkl_name,' '.join(self.setting['shelxl_args']))),str(self.remote_workdir/'START'))
         
         #submit job script
         self.job_id = self.queingsystem.submit_job(self)
@@ -398,10 +400,10 @@ class RefinementJob():
         return job
 
     @staticmethod
-    def get_ins_hash(ins_path):       
+    def get_ins_hash(ins_path):
         with open(ins_path) as f:
             ins_content = f.read()
-        #remove ANIS instruction, comments and whitespace from ins_content
+        #remove ANIS instructions, comments and whitespace from ins_content
         stripped_ins_content = re.sub(r'REM.*|!.*|ANIS|\s','',ins_content)
         return hashlib.md5(stripped_ins_content.encode('utf-8')).hexdigest()
 

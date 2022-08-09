@@ -35,8 +35,7 @@ class Sun_Grid_Engine(BaseQuingsystem):
             f.write('TMPDIR="/tmp/${JOB_ID}_${JOB_NAME}"\n')
             f.write('mkdir -p "$TMPDIR"\n')
             f.write('fi\n\n')
-            f.write('cp "$INPUTDIR/{}" "$TMPDIR"\n'.format(job.ins_name))
-            f.write('cp "$INPUTDIR/{}" "$TMPDIR"\n'.format(job.hkl_name))
+            f.write('cp "$INPUTDIR"/* "$TMPDIR"\n')
             f.write('cd "$TMPDIR"\n')
             
             f.write('echo "$(hostname):$(pwd)" > "$INPUTDIR/RUNDIR"\n')
@@ -44,12 +43,14 @@ class Sun_Grid_Engine(BaseQuingsystem):
                 f.write('\n')
                 f.write('START_TIME="$(date +%s)"\n')
                 f.write('\nwhile [ $(date +%s) -le $(($START_TIME + {} )) ];do\n'.format(cls.wait_time(job)))
-                f.write('if [ -f "{}" -a -f "{}" ];then\n'.format(job.ins_name,job.hkl_name)) 
+                f.write('if [ -f "START" ];then\n') 
+
 
             #TODO
-            #awk 'BEGIN{ORS=" " } {for(i=1;i<=NF;i++) print "\""$i"\"" }' RESTART
+            #awk 'BEGIN{ORS=" " } {for(i=1;i<=NF;i++) print "\""$i"\"" }' START
+            f.write('%s $(sed -n "1p" START) -t%s > "$INPUTDIR/%s" 2>&1 \n' % (job.setting['shelxlpath'],job.setting['queingsystem']['cpu'],cls.output_filename()))
             
-            f.write('{} {} {} -t{} > "$INPUTDIR/{}" 2>&1 \n'.format(job.setting['shelxlpath'],job.ins_hkl_name,' '.join(job.setting['shelxl_args']),job.setting['queingsystem']['cpu'],cls.output_filename()))
+            #f.write('{} {} {} -t{} > "$INPUTDIR/{}" 2>&1 \n'.format(job.setting['shelxlpath'],job.ins_hkl_name,' '.join(job.setting['shelxl_args']),job.setting['queingsystem']['cpu'],cls.output_filename()))
             
             
             if job.setting['queingsystem']['wait_time'] != 0:

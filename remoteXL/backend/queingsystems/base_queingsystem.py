@@ -93,6 +93,7 @@ class BaseQuingsystem(ABC):
     @abstractmethod
     def create_job_script(cls,job):
         #Create the script which is run ( by the queingsystem of the remote host) to execute shelxl
+        #The args for shelxl are provided by the refinment_job class in a START file located in the remote_workdir
         #After the shelxl execution a file named 'DONE' has to be created in the remote_workdir   
         raise NotImplementedError
     

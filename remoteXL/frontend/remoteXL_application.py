@@ -182,13 +182,15 @@ class RemoteXL_Application():
         self.app.quit()   
             
     def exec_(self): 
-        self.check_shelxle_integration()  
         
-        #TODO impelent
+
         parent_process = psutil.Process(os.getpid()).parent()
         if 'shelxle' in parent_process.name().lower():
-            pass
-        
+            self.check_shelxle_integration() 
+            response =   self.call_backend(['add_pids',os.getpid(),parent_process.pid])
+            if response[0] == 'error': 
+                QMessageBox.warning(None, 'remoteXL: Error', response[1], QMessageBox.Ok)
+                self.logger.warning('Error: %s',response[1])
         
         #Check if sys.argv are from ShelXL call 
         #This is the case if sys.argv[1] contains the name of a ins & hkl file
@@ -254,7 +256,6 @@ class RemoteXL_Application():
         self.stop_execution(return_code)
     
     
-    #TODO: Change call_backend to handle error signal 
     def call_backend(self,signal):    
         self._send(signal)
         return self._get_data()

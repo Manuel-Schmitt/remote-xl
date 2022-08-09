@@ -60,7 +60,7 @@ class NewSetting_Window(QMainWindow):
         self.ui.local_shelxlpath_lineEdit.setText(path)
         
     def save_clicked(self):
-        response = self.remoteXLApp.call_backend(['new_setting',self._get_data()])
+        response = self.remoteXLApp.call_backend(['add_setting',self._get_data()])
         if response[0] == 'error':
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:
@@ -68,7 +68,7 @@ class NewSetting_Window(QMainWindow):
             
     def run_clicked(self):
         new_setting = self._get_data()
-        response = self.remoteXLApp.call_backend(['new_setting',new_setting])
+        response = self.remoteXLApp.call_backend(['add_setting',new_setting])
         if response[0] == 'error':
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:

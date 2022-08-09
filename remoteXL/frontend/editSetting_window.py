@@ -42,12 +42,12 @@ class EditSetting_Window(NewSetting_Window):
     def delete_clicked(self):
         yes_no = QMessageBox.question(self,'remoteXL', "Do you really want to delete this setting?", QMessageBox.Yes | QMessageBox.No)        
         if yes_no == QMessageBox.Yes:
-            self.remoteXLApp._send(['delete_setting',self.setting])
+            self.remoteXLApp.call_backend(['delete_setting',self.setting])
             self.close()
                 
     def save_clicked(self):
         self.setting.update(self._get_data())
-        response = self.remoteXLApp.call_backend(['edit_setting',self.setting])
+        response = self.remoteXLApp.call_backend(['add_setting',self.setting])
         if response[0] == 'error':
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:
@@ -56,7 +56,7 @@ class EditSetting_Window(NewSetting_Window):
             
     def run_clicked(self):
         self.setting.update(self._get_data())
-        response = self.remoteXLApp.call_backend(['edit_setting',self.setting])
+        response = self.remoteXLApp.call_backend(['add_setting',self.setting])
         if response[0] == 'error':
             QMessageBox.warning(self, 'remoteXL: Error', response[1], QMessageBox.Ok)
         else:
