@@ -63,8 +63,6 @@ class RemoteXLBackend():
         listener = Listener(('localhost',0))
         port = listener.address[1]
                
-        with open(main.get_port_path(), "w") as jsonfile:
-            json.dump({'port':port}, jsonfile,)    
             
         listener._listener._socket.settimeout(3)
         return listener           

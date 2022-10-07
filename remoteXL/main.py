@@ -18,7 +18,7 @@ import psutil
 
 from PyQt5.QtWidgets import QApplication,QMessageBox
 
-from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING
+from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING, REMOTEXL_SERVICE_NAME
 from remoteXL.backend import remoteXL_service
 from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 
@@ -28,7 +28,8 @@ from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 # Known Bugs:
 #
 #  ShelXL trows Could not allocate memory sometimes
-
+#  Crashes when dir of running job was deleted
+#  Background process cant open files on nfs
 
 
 def get_log_path(is_service=False)  -> Path:
@@ -37,9 +38,8 @@ def get_log_path(is_service=False)  -> Path:
     if is_service:
         return  p / 'remoteXL_service.log'
     return  p / 'remoteXL_client.log'
-#TODO use psutil instead of port file
-def get_port_path()  -> Path:  
-    return  application_dir() / 'port'
+
+
 def get_config_path()  -> Path:  
     p = application_dir() / 'config'
     p.mkdir(parents=True,exist_ok=True)
@@ -130,7 +130,7 @@ def wait_for_service_status(*status,timeout=10):
     timeout_start = time.time()
     service_status = None
     while time.time() < timeout_start + timeout:
-        service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
+        service_status = win32serviceutil.QueryServiceStatus(REMOTEXL_SERVICE_NAME)[1]
         if service_status in status:
             logger.debug('remoteXL Service status: %s',service_status)
             return
@@ -168,7 +168,7 @@ def check_service():
     service_installed = True
     try:       
         wait_for_service_status(win32service.SERVICE_STOPPED,win32service.SERVICE_RUNNING)
-        service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
+        service_status = win32serviceutil.QueryServiceStatus(REMOTEXL_SERVICE_NAME)[1]
         if service_status == win32service.SERVICE_STOPPED:
             logger.info('remoteXL Service is not running')
         elif service_status == win32service.SERVICE_RUNNING:
@@ -265,7 +265,7 @@ def check_service():
     #Get version of installed remoteXL service from display name
     try:
         hscm = win32service.OpenSCManager(None, None, 1 )
-        hs = win32service.OpenService(hscm, remoteXL_service.RemoteXLService._svc_name_, win32service.SERVICE_QUERY_CONFIG )
+        hs = win32service.OpenService(hscm, REMOTEXL_SERVICE_NAME, win32service.SERVICE_QUERY_CONFIG )
         try:
             service_config = win32service.QueryServiceConfig(hs)
             display_name = str(service_config[8])
