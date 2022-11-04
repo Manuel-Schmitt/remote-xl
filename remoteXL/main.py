@@ -18,6 +18,7 @@ import psutil
 
 from PyQt5.QtWidgets import QApplication,QMessageBox
 
+
 from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING
 from remoteXL.backend import remoteXL_service
 from remoteXL.frontend.remoteXL_application import RemoteXL_Application
@@ -28,6 +29,8 @@ from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 # Known Bugs:
 #
 #  ShelXL trows Could not allocate memory sometimes
+# Background process cont open files on nfs
+# Crashes when running job dir is deleted
 
 
 
@@ -121,7 +124,7 @@ def run_service_command(commands:list) ->None:
     sys.stderr = StreamToLogger(logger, logging.WARNING,sys.stderr) 
     return_code = win32serviceutil.HandleCommandLine(remoteXL_service.RemoteXLService,argv=commands)     
     if return_code != 0:
-        logger.error('Could not %s remoteXL Service. Error: ', str(commands)+str(return_code))
+        logger.error('Could not %s remoteXL Service. Error: %s', str(commands[1:]),str(return_code))
         sys.exit(1)
     #Restore original stdout
     sys.stdout, sys.stderr = original_stdout, original_stderr
@@ -251,7 +254,7 @@ def check_service():
     if not service_installed:   
         #Re-run the program with admin rights in separate shell to install and start service
         #TODO: Add more info and add integration into shelxle
-        response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is not running.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
+        response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is not installed.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
         if response == QMessageBox.Ok:
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([sys.argv[0],'--InstallService']), None, 0)
             wait_for_children()
@@ -308,14 +311,20 @@ def check_service():
             sys.exit(1)
 
 
+
+
+    
             
 if __name__ == '__main__':
+    
      
     if '--Service-Call' in sys.argv: 
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(remoteXL_service.RemoteXLService)
         servicemanager.StartServiceCtrlDispatcher()
         sys.exit(0)          
+    
+
     
     logger = logging.getLogger('remoteXL')
     fh = logging.FileHandler(get_log_path())
