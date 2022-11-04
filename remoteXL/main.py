@@ -18,8 +18,7 @@ import psutil
 
 from PyQt5.QtWidgets import QApplication,QMessageBox
 
-
-from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING
+from remoteXL import LOGLEVEL, VERSION, LOGFORMATSTRING, REMOTEXL_SERVICE_NAME
 from remoteXL.backend import remoteXL_service
 from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 
@@ -29,9 +28,8 @@ from remoteXL.frontend.remoteXL_application import RemoteXL_Application
 # Known Bugs:
 #
 #  ShelXL trows Could not allocate memory sometimes
-# Background process cont open files on nfs
-# Crashes when running job dir is deleted
-
+#  Crashes when dir of running job was deleted
+#  Background process cant open files on nfs
 
 
 def get_log_path(is_service=False)  -> Path:
@@ -40,9 +38,8 @@ def get_log_path(is_service=False)  -> Path:
     if is_service:
         return  p / 'remoteXL_service.log'
     return  p / 'remoteXL_client.log'
-#TODO use psutil instead of port file
-def get_port_path()  -> Path:  
-    return  application_dir() / 'port'
+
+
 def get_config_path()  -> Path:  
     p = application_dir() / 'config'
     p.mkdir(parents=True,exist_ok=True)
@@ -124,7 +121,7 @@ def run_service_command(commands:list) ->None:
     sys.stderr = StreamToLogger(logger, logging.WARNING,sys.stderr) 
     return_code = win32serviceutil.HandleCommandLine(remoteXL_service.RemoteXLService,argv=commands)     
     if return_code != 0:
-        logger.error('Could not %s remoteXL Service. Error: %s', str(commands[1:]),str(return_code))
+        logger.error('Could not %s remoteXL Service. Error: ', str(commands)+str(return_code))
         sys.exit(1)
     #Restore original stdout
     sys.stdout, sys.stderr = original_stdout, original_stderr
@@ -133,7 +130,7 @@ def wait_for_service_status(*status,timeout=10):
     timeout_start = time.time()
     service_status = None
     while time.time() < timeout_start + timeout:
-        service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
+        service_status = win32serviceutil.QueryServiceStatus(REMOTEXL_SERVICE_NAME)[1]
         if service_status in status:
             logger.debug('remoteXL Service status: %s',service_status)
             return
@@ -171,7 +168,7 @@ def check_service():
     service_installed = True
     try:       
         wait_for_service_status(win32service.SERVICE_STOPPED,win32service.SERVICE_RUNNING)
-        service_status = win32serviceutil.QueryServiceStatus(remoteXL_service.RemoteXLService._svc_name_)[1]
+        service_status = win32serviceutil.QueryServiceStatus(REMOTEXL_SERVICE_NAME)[1]
         if service_status == win32service.SERVICE_STOPPED:
             logger.info('remoteXL Service is not running')
         elif service_status == win32service.SERVICE_RUNNING:
@@ -254,7 +251,7 @@ def check_service():
     if not service_installed:   
         #Re-run the program with admin rights in separate shell to install and start service
         #TODO: Add more info and add integration into shelxle
-        response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is not installed.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
+        response = QMessageBox.question(None, 'remoteXL','RemoteXL background service is not running.\nAdministrator rights are required to continue.', QMessageBox.Cancel|QMessageBox.Ok) 
         if response == QMessageBox.Ok:
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([sys.argv[0],'--InstallService']), None, 0)
             wait_for_children()
@@ -268,7 +265,7 @@ def check_service():
     #Get version of installed remoteXL service from display name
     try:
         hscm = win32service.OpenSCManager(None, None, 1 )
-        hs = win32service.OpenService(hscm, remoteXL_service.RemoteXLService._svc_name_, win32service.SERVICE_QUERY_CONFIG )
+        hs = win32service.OpenService(hscm, REMOTEXL_SERVICE_NAME, win32service.SERVICE_QUERY_CONFIG )
         try:
             service_config = win32service.QueryServiceConfig(hs)
             display_name = str(service_config[8])
@@ -311,20 +308,14 @@ def check_service():
             sys.exit(1)
 
 
-
-
-    
             
 if __name__ == '__main__':
-    
      
     if '--Service-Call' in sys.argv: 
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(remoteXL_service.RemoteXLService)
         servicemanager.StartServiceCtrlDispatcher()
         sys.exit(0)          
-    
-
     
     logger = logging.getLogger('remoteXL')
     fh = logging.FileHandler(get_log_path())

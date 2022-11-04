@@ -25,7 +25,8 @@ from multiprocessing import Process
 
 from remoteXL.frontend.selectSetting_window import SelectSetting_Window, RunningJobDialog
 from remoteXL.frontend.config_window import Config_Window
-from remoteXL import main
+from remoteXL import main, REMOTEXL_SERVICE_NAME
+
 
 class RemoteXL_Application():
     
@@ -260,11 +261,23 @@ class RemoteXL_Application():
         self._send(signal)
         return self._get_data()
     
+    
+    
     def connect_to_backend(self):
         s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        with open(main.get_port_path(), "r") as jsonfile:
-            port_dict = json.load(jsonfile)
-        backend_port = port_dict['port']
+        
+        #Find backend process port
+        backend_port = None
+        backend_pid = psutil.win_service_get(REMOTEXL_SERVICE_NAME).pid()
+        backend_process = psutil.Process(backend_pid)
+        
+        for con in backend_process.connections():
+            if con.laddr.ip == '127.0.0.1' or con.laddr.ip == 'localhost':
+                if con.status == psutil.CONN_LISTEN:
+                    backend_port = con.laddr.port
+
+               
+        
         s.settimeout(self.timeout)
         try: 
             s.connect(('localhost',backend_port))          

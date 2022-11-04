@@ -8,12 +8,12 @@ from pathlib import Path
 import win32service
 import win32serviceutil
 
-from remoteXL import VERSION,LOGLEVEL,LOGFORMATSTRING, main
+from remoteXL import VERSION,LOGLEVEL,LOGFORMATSTRING,REMOTEXL_SERVICE_NAME, main
 from remoteXL.backend import backend
     
 class RemoteXLService(win32serviceutil.ServiceFramework):
-    _svc_name_ = "remoteXL-Service"
-    _svc_display_name_ = "remoteXL-Service-V{}".format(VERSION)
+    _svc_name_ = REMOTEXL_SERVICE_NAME
+    _svc_display_name_ = "{}-V{}".format(REMOTEXL_SERVICE_NAME,VERSION)
     _svc_description_ = "Background process of remoteXL for file synchronization"
     _exe_args_ = "--Service-Call"
            
