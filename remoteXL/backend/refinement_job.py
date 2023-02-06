@@ -295,7 +295,7 @@ class RefinementJob():
             self.remote_job_status = status
         
     def check_finish_gracefully(self):
-        #If ins_hkl_path.fin file exists, finish gracefully was pressed in shelxle and this file needs to be copied to the remote host.
+        #If ins_hkl_path.fin file exists, finish gracefully was pressed in shelxle anda this file needs to be copied to the remote host.
         fin_file_path = self.ins_hkl_path.with_suffix('.fin')
         if fin_file_path.is_file():
             self.ins_hkl_path.with_suffix('.fin').unlink(missing_ok=True)
