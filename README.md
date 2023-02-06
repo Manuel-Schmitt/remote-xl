@@ -6,7 +6,7 @@ RemoteXL is an extension to the graphical user interface of shelXle. It allows t
     - Slurm
     - Sun Grid Engine
 
-Please don't hesitate to post bug reports or future requests.
+Please don't hesitate to post bug reports or feature requests.
 
 ## Installation 
 1. Download the latest release and extract the zip file to a permanent folder (e.g. C:\remoteXL or C:\bn\remoteXL)
