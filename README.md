@@ -18,6 +18,6 @@ Please don't hesitate to post bug reports or future requests.
 2. Create a new connection to a remote host or select a local shelXL version: 
     e.g.
     
-    ![integral](/remoteXL/pictures/NK.png)
+    ![integral](/remoteXL/pictures/NK.PNG)
     
 3. Start the refinement with the selected settings.
