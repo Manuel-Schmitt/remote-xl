@@ -3,15 +3,15 @@ RemoteXL is an extension to the graphical user interface of shelXle. It allows t
 
 ## Work in Progress
 - Supported queuing systems:
-    Slurm
-    Sun Grid Engine
+    - Slurm
+    - Sun Grid Engine
 
 Please don't hesitate to post bug reports or future requests.
 
 ## Installation 
 1. Download the latest release and extract the zip file to a permanent folder (e.g. C:\remoteXL or C:\bn\remoteXL)
-2. Copy the latest version of shelxl to your remote maschine (http://shelx.uni-goettingen.de/download.php)
-3. In ShelXle: Set the remoteXL.exe as your shelXL executable.
+2. Copy the latest version of shelXL to your remote maschine (http://shelx.uni-goettingen.de/download.php)
+3. In shelXle: Set remoteXL.exe as your shelXL executable.
 
 ## Usage:
 1. Start the refinement in shelXle (F2)
